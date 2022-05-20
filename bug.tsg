@@ -1,0 +1,11 @@
+[
+  (struct_item name: (_) @here)
+  (enum_item name: (_) @ehre) ;; oops, typo
+] {
+  let @here.context = "%pattern"
+}
+
+(scoped_type_identifier) @path {
+  node s
+  attr (s) symbol = @path.context ;; oops, not defined
+}
