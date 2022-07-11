@@ -223,6 +223,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (mut_pattern (mutable_specifier) (identifier) @ident)
   (ref_pattern (identifier) @ident)
   (captured_pattern (identifier) @ident "@" (_))
+  (captured_pattern (identifier) "@" (identifier) @ident)
   (reference_pattern "&" (mutable_specifier)? (identifier) @ident)
   (or_pattern (identifier) @ident)
 ] {
@@ -1384,7 +1385,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (field_pattern pattern: (_) @here)
   (mut_pattern (mutable_specifier) (_) @here)
   (ref_pattern (_) @here)
-  (captured_pattern (_) @here "@" (_))
+  (captured_pattern (identifier) @here "@" (_))
+  (captured_pattern (identifier) "@" (_) @here)
   (reference_pattern "&" (mutable_specifier)? (_) @here)
   (or_pattern (_) @here)
 ] {
