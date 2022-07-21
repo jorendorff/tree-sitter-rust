@@ -1897,12 +1897,19 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   }
 }
 
+;; Treat reference types (`&T` and `&mut T`) as identical to the referred-to
+;; type (`T`), for now. This is fine only because we don't do anything much
+;; with types yet, except look up fields and methods in `expr.foo` syntax. For
+;; that specific purpose, references are quite transparent.
+(reference_type type: (_) @inner) @ty {
+  let @ty.use = @inner.use
+}
+
 ;; Types we don't support yet get a dummy node for `.use`, to avoid "undefined
 ;; scoped variable". It's not hooked up to anything, so any attempt to use it
 ;; will silently fail to find a path through the graph.
 [
   (abstract_type)
-  (reference_type)
   (metavariable)
   (pointer_type)
   (generic_type)
