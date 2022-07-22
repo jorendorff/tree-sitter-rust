@@ -30,5 +30,8 @@ pub fn card_name_by_ref(r: &ReportCard) -> &str {
 fn main() {
     let kaitlin = Student { name: "kaitlin".to_string() };
     let _ = kaitlin.name;
-    //              ^ defined: 2
+    //               ^ defined: 2
+    let roman = Student { name: "roman".to_string() };
+    let _ = (&roman).name;
+    //               ^ defined: 2
 }

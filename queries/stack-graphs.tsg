@@ -2023,10 +2023,15 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   let @expr.type = @type.use
 }
 
+;; Bogus: set the type of `&x` to the type of `x`.
+;; See the comment at `(reference_type type: (_) @inner)`.
+(reference_expression value: (_) @value) @expr {
+  let @expr.type = @value.type
+}
+
 ;; Expressions for which we don't yet infer types.
 [
   (unary_expression)
-  (reference_expression)
   (try_expression)
   (binary_expression)
   (assignment_expression)
