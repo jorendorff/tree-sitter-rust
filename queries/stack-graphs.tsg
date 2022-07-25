@@ -2029,6 +2029,53 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   let @expr.type = @value.type
 }
 
+(block [
+  ;; List of all expression node types that don't end in blocks.
+  ;; We omit node types for which we don't yet infer types.
+  (type_cast_expression) @last_expr
+  (call_expression) @last_expr
+  (parenthesized_expression) @last_expr
+  (struct_expression) @last_expr
+  (reference_expression) @last_expr
+  ;; When our tree-sitter grammar parses blocks where the final expression is a
+  ;; block or ends with a block, it parses this as an expression-statement. I'm
+  ;; pretty sure that is wrong. But not certain, because Rust's rules about
+  ;; semicolons and blocks are a mess.
+  ;;(expression_statement (block) @last_expr .)
+  ;;(expression_statement (unsafe_block) @last_expr .)
+  (_)
+] .) @expr {
+  if some @last_expr {
+    let @expr.type = @last_expr.type
+  } else {
+    node @expr.type
+  }
+}
+
+(block (_)* @stuff) @expr {
+  if (is-empty @stuff) {
+    node @expr.type
+  }
+}
+
+(unsafe_block (block) @block) @expr {
+  let @expr.type = @block.type
+}
+
+[
+  (if_expression consequence: (_) @then alternative: (else_clause "else" (_) @else)?)
+  (if_let_expression consequence: (_) @then alternative: (else_clause "else" (_) @else)?)
+] @expr {
+  if some @else {
+    node @expr.type
+    edge @expr.type -> @then.type
+    edge @expr.type -> @else.type
+  } else {
+    ;; The type is `()`.
+    node @expr.type
+  }
+}
+
 ;; Expressions for which we don't yet infer types.
 [
   (unary_expression)
@@ -2056,11 +2103,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (index_expression)
   (metavariable)
   (closure_expression)
-  (unsafe_block)
   (async_block)
-  (block)
-  (if_expression)
-  (if_let_expression)
   (match_expression)
   (while_expression)
   (while_let_expression)
