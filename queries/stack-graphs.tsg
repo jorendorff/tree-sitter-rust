@@ -979,11 +979,11 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; they're looking for is really located in this file.
 (source_file) @root {
   node crate_node
-  attr (crate_node) source_node = @root, pop_symbol = "%crate", is_definition
+  attr (crate_node) source_node = @root, pop_symbol = "%crate_defs", is_definition
   edge ROOT_NODE -> crate_node
 
   node to_crate
-  attr (to_crate) push_symbol = "%crate"
+  attr (to_crate) push_symbol = "%crate_defs"
   edge to_crate -> ROOT_NODE
 
   ;; As we process the path, we're building two graph-paths: to_super and
@@ -1301,7 +1301,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   ;; All uses of `crate` are threaded through the root node,
   ;; so they can cross file boundaries.
   node @keyword.use
-  attr (@keyword.use) type = "push_symbol", symbol = "%crate", is_reference, source_node = @keyword
+  attr (@keyword.use) type = "push_symbol", symbol = "%crate_defs", is_reference, source_node = @keyword
   edge @keyword.use -> ROOT_NODE
 }
 
