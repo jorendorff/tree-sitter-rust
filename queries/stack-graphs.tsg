@@ -2,10 +2,23 @@
 ;; Rust
 ;; ####
 ;;
+;; This file is about finding our way from references to the corresponding
+;; definitions.
+;;
+;; Definitions ("defs") are identifiers in certain specific syntactic
+;; positions, where they're naming something.
+;;
+;; References ("uses") are all other identifiers. Each one refers to some named
+;; something.
+;;
+;; In Rust, if the code compiles, then each reference (apart from a few names
+;; like `i32` defined in the language prelude) has a corresponding definition,
+;; either in the current crate, a dependency, or the standard library. Finding
+;; the definition may involve some poking around.
+;;
 ;; # Unqualified name lookups
 ;;
-;; This file is about finding our way from identifiers to their definitions.
-;; Not all name lookups work exactly the same way; an identifier that appears
+;; Not all name lookups work exactly the same way. An identifier that appears
 ;; after `expr.` or `ty::`, or in a few other syntactic contexts, is qualified.
 ;; The others, unqualified names, are simply ("simply"!) looked up in the
 ;; enclosing lexical scope.
