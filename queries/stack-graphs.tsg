@@ -978,26 +978,44 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; In which we help folks coming in from the root node to tell if the path
 ;; they're looking for is really located in this file.
 (source_file) @root {
-  node crate_node
-  attr (crate_node) source_node = @root, pop_symbol = "%crate_defs", is_definition
-  edge ROOT_NODE -> crate_node
+  ;; Every file in the crate contributes to the same tree of modules, but they
+  ;; can't share scope-nodes (except ROOT_NODE). So for each source file, this
+  ;; code builds a separate copy of the path from the root of that tree to one
+  ;; leaf module.
 
-  node to_crate
-  attr (to_crate) push_symbol = "%crate_defs"
-  edge to_crate -> ROOT_NODE
+  ;; Thus every file in the crate has its own `crate_defs` node.
+  node crate_defs
+  attr (crate_defs) source_node = @root, pop_symbol = "%crate_defs", is_definition
+  edge ROOT_NODE -> crate_defs
 
-  ;; As we process the path, we're building two graph-paths: to_super and
-  ;; from_root.
+  ;; Edge to crate-level definitions, typically defined in the root `lib.rs`.
+  node out_to_crate_defs
+  attr (out_to_crate_defs) push_symbol = "%crate_defs"
+  edge out_to_crate_defs -> ROOT_NODE
+
+  ;; Dual of crate_defs: Path to all uses of `crate::` in all files.
+  node out_to_crate_uses
+  attr (out_to_crate_uses) push_symbol = "%crate_uses"
+  edge out_to_crate_uses -> ROOT_NODE
+
+  ;; Dual of out_to_crate_defs: Path to all uses of `crate::` in this file,
+  ;; incoming from any file.
+  node @root.in_to_crate_uses
+  attr (@root.in_to_crate_uses) pop_symbol = "%crate_uses"
+  edge ROOT_NODE -> @root.in_to_crate_uses
+
+  ;; As we process the path, we're building two graph-paths: out_to_super and
+  ;; in_from_root.
   ;;
-  ;; to_super: Graph path that pushes the enclosing module's canonical path and
+  ;; out_to_super: Graph path that pushes the enclosing module's canonical path and
   ;; then jumps to the root node, for implementing `super` in this module.
-  var to_super = to_crate
+  var out_to_super = out_to_crate_defs
 
-  ;; from_root: Graph path from ROOT_NODE to the scope node for this module,
-  ;; popping names as we go, so that when another file wants to resolve
-  ;; `crate::a::b::c::X`, that can resolve to something in the file
+  ;; in_from_root: End node of a graph path from ROOT_NODE to the scope node for
+  ;; this module, popping names as we go, so that when another file wants to
+  ;; resolve `crate::a::b::c::X`, that can resolve to something in the file
   ;; `src/a/b/c.rs`.
-  var from_root = crate_node
+  var in_from_root = crate_defs
 
   ;; To implement `mod child;` so that `child` refers to a module defined in
   ;; another file, we need a gadget to reach the nodes representing this
@@ -1010,69 +1028,70 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   ;; detail :-P
   scan FILE_PATH {
     "(main|lib|mod|src/bin/[^/]+)\.rs$" {
-      ;; Do not push this filename onto either from_root or to_super.
-      set to_anyfile = to_crate
+      ;; Do not push this filename onto either in_from_root or out_to_super.
+      ;; TODO - test if super works in files named mod.rs
+      set to_anyfile = out_to_crate_defs
     }
 
     "([^/]+)\.rs$" {
-      ;; Extend `from_root` to pop this module name; but don't change `to_super`.
+      ;; Extend `in_from_root` to pop this module name; but don't change `out_to_super`.
       node pop_types
       attr (pop_types) pop_symbol = "%types"
-      edge from_root -> pop_types
-      attr (from_root -> pop_types) precedence = 1
+      edge in_from_root -> pop_types
+      attr (in_from_root -> pop_types) precedence = 1
       node pop_name
       attr (pop_name) pop_symbol = $1
       edge pop_types -> pop_name
-      set from_root = pop_name
+      set in_from_root = pop_name
 
       ;; To reach this module but in another file, we have to push this
       ;; module's canonical path (in reverse order, as usual), then go to
       ;; ROOT_NODE. We push the canonical path by pushing this module's name
       ;; and `%types`, then pushing the parent module's canonical path in
-      ;; reverse order (using `to_super`).
+      ;; reverse order (using `out_to_super`).
       node anyfile1
       attr (anyfile1) push_symbol = $1
       node anyfile2
       attr (anyfile2) push_symbol = "%types"
       edge anyfile1 -> anyfile2
-      edge anyfile2 -> to_super
+      edge anyfile2 -> out_to_super
       set to_anyfile = anyfile1
     }
 
     "src/" {
       ;; Reset.
-      set to_super = to_crate
-      set to_anyfile = to_crate
-      set from_root = crate_node
+      set out_to_super = out_to_crate_defs
+      set to_anyfile = out_to_crate_defs
+      set in_from_root = crate_defs
     }
 
     "([^/]+)/" {
-      ;; Extend `from_root` to pop this module name.
+      ;; Extend `in_from_root` to pop this module name.
       node pop_types
       attr (pop_types) pop_symbol = "%types"
-      edge from_root -> pop_types
-      attr (from_root -> pop_types) precedence = 1
+      edge in_from_root -> pop_types
+      attr (in_from_root -> pop_types) precedence = 1
       node pop_name
       attr (pop_name) pop_symbol = $1
       edge pop_types -> pop_name
-      set from_root = pop_name
+      set in_from_root = pop_name
 
-      ;; Extend `to_super` to push this module name.
+      ;; Extend `out_to_super` to push this module name.
       node push_types
       attr (push_types) push_symbol = "%types"
-      edge push_types -> to_super
+      edge push_types -> out_to_super
       node push_name
       attr (push_name) push_symbol = $1
       edge push_name -> push_types
-      set to_super = push_name
+      set out_to_super = push_name
     }
   }
 
-  ;; Use from_root as the definition node for this source file.
-  let @root.def = from_root
-  edge from_root -> @root.type_defs
-  edge from_root -> @root.value_defs
-  edge from_root -> @root.def_any
+  ;; Use in_from_root as the definition node for this source file.
+  let @root.def = in_from_root
+  edge in_from_root -> @root.type_defs
+  edge in_from_root -> @root.value_defs
+  edge in_from_root -> @root.def_any
 
   ;; Bind `self` to a node with the same out-edges as @root.def. (Can't use the
   ;; same node because TSG doesn't really support aliases: only nodes with type
@@ -1084,15 +1103,14 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   edge self -> @root.value_defs
   edge self -> @root.def_any
 
-  ;; Bind `super` to the to_super path.
+  ;; Bind `super` to the out_to_super path.
   node pop_super
   attr (pop_super) pop_symbol = "super"
   edge @root.type_defs -> pop_super
-  edge pop_super -> to_super
+  edge pop_super -> out_to_super
 
   ;; Bind `%anyfile` to a graph path that pushes this module's canonical name,
-  ;; then goes to the shared ROOT_NODE. This enables finding nodes that
-  ;; represent this module in other files.
+  ;; then goes to the shared ROOT_NODE. See comment on to_anyfile.
   node pop_anyfile
   attr (pop_anyfile) pop_symbol = "%anyfile"
   edge @root.def -> pop_anyfile
