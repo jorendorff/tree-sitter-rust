@@ -326,7 +326,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   node t
   attr (t) pop_symbol = "%type"
   edge @ident.def -> t
-  edge t -> @type.use
+  edge t -> @type.to_def
 
 }
 
@@ -677,16 +677,16 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (const_item value: [(identifier) (self)] @ident)
   (static_item value: [(identifier) (self)] @ident)
 ] {
-  node @ident.use
-  attr (@ident.use) node_reference = @ident
+  node @ident.to_def
+  attr (@ident.to_def) node_reference = @ident
   node v
   attr (v) push_symbol = "%values"
-  edge @ident.use -> v
+  edge @ident.to_def -> v
   edge v -> @ident.scope
 
   node @ident.type
   attr (@ident.type) push_symbol = "%type"
-  edge @ident.type -> @ident.use
+  edge @ident.type -> @ident.to_def
 }
 
 ;; ## Identifiers in type context
@@ -747,12 +747,12 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   ;; ### Statements
   (let_declaration type: (type_identifier) @ident)
 ] {
-  node @ident.use
-  attr (@ident.use) node_reference = @ident
+  node @ident.to_def
+  attr (@ident.to_def) node_reference = @ident
 
   let t = (node)
   attr (t) push_symbol = "%types"
-  edge @ident.use -> t
+  edge @ident.to_def -> t
   edge t -> @ident.scope
 }
 
@@ -868,7 +868,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; implicitly unit, we don't bother.)
 (function_item
   return_type: [
-    ;; List of nodes matching `$._type` that have `.use`
+    ;; List of nodes matching `$._type` that have `.to_def`
     (type_identifier)
     (scoped_type_identifier)
   ] @rtype
@@ -879,7 +879,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   attr (t2) pop_symbol = "%rtype"
   edge @item.def -> t1
   edge t1 -> t2
-  edge t2 -> @rtype.use
+  edge t2 -> @rtype.to_def
 }
 
 ;; Bind const and static items in the value namespace and attach their declared
@@ -893,7 +893,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   node t
   attr (t) pop_symbol = "%type"
   edge @item.def -> t
-  edge t -> @type.use
+  edge t -> @type.to_def
 }
 
 ;; Bind tuple-like structs in the value namespace. We use the same node for the
@@ -1197,7 +1197,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   node t
   attr (t) pop_symbol = "%type"
   edge @field.def -> t
-  edge t -> @type.use
+  edge t -> @type.to_def
 }
 
 ;; Install paths from an enum to its variants.
@@ -1276,7 +1276,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;;     extern prelude.
 ;;
 ;; Below are the rules implementing each of these cases (the ones we support,
-;; anyway) by setting the `.use` variable of the qualifier to a node that
+;; anyway) by setting the `.to_def` variable of the qualifier to a node that
 ;; leads to the appropriate scope. The name to the right of `::` is resolved
 ;; in that scope.
 
@@ -1295,12 +1295,12 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   ;; bogus if it happens, but accepted by the parser:
   (range_pattern [(self) (super)] @keyword)
 ] {
-  node @keyword.use
-  attr (@keyword.use) node_reference = @keyword
+  node @keyword.to_def
+  attr (@keyword.to_def) node_reference = @keyword
 
   let t = (node)
   attr (t) push_symbol = "%types"
-  edge @keyword.use -> t
+  edge @keyword.to_def -> t
   edge t -> @keyword.scope
 }
 
@@ -1318,9 +1318,9 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ] {
   ;; All uses of `crate` are threaded through the root node,
   ;; so they can cross file boundaries.
-  node @keyword.use
-  attr (@keyword.use) type = "push_symbol", symbol = "%crate_defs", is_reference, source_node = @keyword
-  edge @keyword.use -> ROOT_NODE
+  node @keyword.to_def
+  attr (@keyword.to_def) type = "push_symbol", symbol = "%crate_defs", is_reference, source_node = @keyword
+  edge @keyword.to_def -> ROOT_NODE
 }
 
 ;; An identifier at the start of a path is resolved relative to the `.scope`.
@@ -1342,21 +1342,21 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (range_pattern (identifier) @name)
 ] {
   ;; For now, a copy of the code for resolving `(type_identifier)`.
-  node @name.use
-  attr (@name.use) node_reference = @name
+  node @name.to_def
+  attr (@name.to_def) node_reference = @name
 
   let t = (node)
   attr (t) push_symbol = "%types"
-  edge @name.use -> t
+  edge @name.to_def -> t
   edge t -> @name.scope
 }
 
 (bracketed_type (_) @child) @parent {
-  let @parent.use = @child.use
+  let @parent.to_def = @child.to_def
 }
 
 (qualified_type alias: (_) @trait) @parent {
-  let @parent.use = @trait.use
+  let @parent.to_def = @trait.to_def
 }
 
 
@@ -1542,16 +1542,16 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (scoped_identifier path: (_)? @parent name: (identifier) @name) @path
   (scoped_type_identifier path: (_)? @parent name: (type_identifier) @name) @path
 ] {
-  node @name.use
-  attr (@name.use) node_reference = @name
-  let @path.use = @name.use
+  node @name.to_def
+  attr (@name.to_def) node_reference = @name
+  let @path.to_def = @name.to_def
 
   node s
   attr (s) push_symbol = (replace @path.context "%pattern" "%values")
 
-  edge @name.use -> s
+  edge @name.to_def -> s
   if some @parent {
-    let @name.scope = @parent.use
+    let @name.scope = @parent.to_def
   } else {
     ;; `::foo` syntax. This is a crate name. TODO - connect s to the extern
     ;; crates. For now, we bogusly treat this like unqualified `foo` rather
@@ -1564,7 +1564,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; Set the scope of the `list:` child of a `(scoped_use_list)`.
 (scoped_use_list path: (_)? @parent list: (use_list) @child) @context {
   if some @parent {
-    let @child.scope = @parent.use
+    let @child.scope = @parent.to_def
   } else {
     ;; `use ::{foo};` syntax. TODO - connect this scope to the extern crates.
     ;; For now, we bogusly treat this like unqualified `foo` rather than leave
@@ -1582,16 +1582,16 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; Note: Method calls parse as (call_expression function: (field_expression)),
 ;; so this rule covers uses of both fields and methods.
 (field_expression value: (_) @value field: (_) @field) @expr {
-  node @field.use
-  attr (@field.use) node_reference = @field
+  node @field.to_def
+  attr (@field.to_def) node_reference = @field
   node f1
   attr (f1) push_symbol = @expr.fcontext ;; either "%fields" or "%method"
-  edge @field.use -> f1
+  edge @field.to_def -> f1
   edge f1 -> @value.type
 
   node @expr.type
   attr (@expr.type) push_symbol = "%type"
-  edge @expr.type -> @field.use
+  edge @expr.type -> @field.to_def
 }
 
 ;; Link fields in struct expressions and patterns to their definitions.
@@ -1603,8 +1603,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   )
   (struct_pattern (field_pattern name: (_) @field_name))
 ] {
-  node @field_name.use
-  attr (@field_name.use) node_reference = @field_name
+  node @field_name.to_def
+  attr (@field_name.to_def) node_reference = @field_name
 }
 
 (struct_expression
@@ -1616,8 +1616,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ) {
   node push_fields
   attr (push_fields) push_symbol = "%fields"
-  edge @field_name.use -> push_fields
-  edge push_fields -> @ty.use
+  edge @field_name.to_def -> push_fields
+  edge push_fields -> @ty.to_def
 }
 
 (struct_pattern
@@ -1629,8 +1629,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ) {
   node push_fields
   attr (push_fields) push_symbol = "%fields"
-  edge @field_name.use -> push_fields
-  edge push_fields -> @ty.use
+  edge @field_name.to_def -> push_fields
+  edge push_fields -> @ty.to_def
 }
 
 
@@ -1647,11 +1647,11 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (type_arguments (lifetime) @lifetime)
   (reference_type (lifetime) @lifetime)
 ] {
-  node @lifetime.use
-  attr (@lifetime.use) node_reference = @lifetime
+  node @lifetime.to_def
+  attr (@lifetime.to_def) node_reference = @lifetime
   node t
   attr (t) push_symbol = "%types"
-  edge @lifetime.use -> t
+  edge @lifetime.to_def -> t
   edge t -> @lifetime.scope
 }
 
@@ -1665,11 +1665,11 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (break_expression (loop_label) @label)
   (continue_expression (loop_label) @label)
 ] @expr {
-  node @label.use
-  attr (@label.use) node_reference = @label
+  node @label.to_def
+  attr (@label.to_def) node_reference = @label
   node t
   attr (t) push_symbol = "%loop"
-  edge @label.use -> t
+  edge @label.to_def -> t
   edge t -> @expr.scope
 }
 
@@ -1795,7 +1795,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   }
   edge @import.item_type_defs -> type_relay
   if some @crate_root {
-    edge type_relay -> @crate_root.use
+    edge type_relay -> @crate_root.to_def
   } else {
     node type_relay1
     attr (type_relay1) type = "push_symbol", node_symbol = @name
@@ -1840,12 +1840,12 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ] {
   ;; Implementation note: Compare with the code in sections "Identifiers in
   ;; expression context" and "Identifiers in type context".
-  node @ident.use
-  attr (@ident.use) node_reference = @ident
+  node @ident.to_def
+  attr (@ident.to_def) node_reference = @ident
 
   let a = (node)
   attr (a) push_symbol = "%any"
-  edge @ident.use -> a
+  edge @ident.to_def -> a
   edge a -> @ident.scope
 }
 
@@ -1893,7 +1893,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; The type inference scheme has four parts:
 ;;
 ;; 1.  Linking type-expressions in the syntax tree to types in the scope graph.
-;;     Each syntax-node that's a Rust type a `.use` scoped variable, a
+;;     Each syntax-node that's a Rust type a `.to_def` scoped variable, a
 ;;     scope-node that leads to the type definition.
 ;;
 ;; 2.  Linking patterns to expected types. Each syntax-node that's a pattern
@@ -1915,9 +1915,9 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;;
 ;; Part 1 of the type inference scheme.
 ;;
-;; Every type-expression should have a `.use` that leads to the type
+;; Every type-expression should have a `.to_def` that leads to the type
 ;; definition. For user-defined types, this works because (type_identifier) and
-;; (scoped_type_identifier) nodes all have a `.use` that crawls the scopes and
+;; (scoped_type_identifier) nodes all have a `.to_def` that crawls the scopes and
 ;; finds the corresponding definition.
 ;;
 ;; Other types are handled here case by case.
@@ -1925,12 +1925,12 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; Function pointer types. Functions have no fields or methods, but they have
 ;; an `"%rtype"` edge that is used to infer the type of a (call_expression).
 (function_type return_type: (_)? @rtype) @ty {
-  node @ty.use
+  node @ty.to_def
   if some @rtype {
     node rtype
     attr (rtype) pop_symbol = "%rtype"
-    edge @ty.use -> rtype
-    edge rtype -> @rtype.use
+    edge @ty.to_def -> rtype
+    edge rtype -> @rtype.to_def
   }
 }
 
@@ -1939,10 +1939,10 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; with types yet, except look up fields and methods in `expr.foo` syntax. For
 ;; that specific purpose, references are quite transparent.
 (reference_type type: (_) @inner) @ty {
-  let @ty.use = @inner.use
+  let @ty.to_def = @inner.to_def
 }
 
-;; Types we don't support yet get a dummy node for `.use`, to avoid "undefined
+;; Types we don't support yet get a dummy node for `.to_def`, to avoid "undefined
 ;; scoped variable". It's not hooked up to anything, so any attempt to use it
 ;; will silently fail to find a path through the graph.
 [
@@ -1959,7 +1959,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (bounded_type)
   (primitive_type)
 ] @ty {
-  node @ty.use
+  node @ty.to_def
 }
 
 
@@ -1973,7 +1973,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   value: (_)? @expr
 ) {
   if some @type {
-    let @pattern.expected_type = @type.use
+    let @pattern.expected_type = @type.to_def
   } else {
     if some @expr {
       let @pattern.expected_type = @expr.type
@@ -1984,7 +1984,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 }
 
 (parameter pattern: (_) @pattern type: (_) @type) {
-  let @pattern.expected_type = @type.use
+  let @pattern.expected_type = @type.to_def
 }
 
 [
@@ -2043,7 +2043,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; expressions an empty node as their `.type`.
 
 (type_cast_expression type: (_) @type) @expr {
-  let @expr.type = @type.use
+  let @expr.type = @type.to_def
 }
 
 (call_expression function: (_) @function) @expr {
@@ -2057,7 +2057,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 }
 
 (struct_expression name: (_) @type) @expr {
-  let @expr.type = @type.use
+  let @expr.type = @type.to_def
 }
 
 ;; Bogus: set the type of `&x` to the type of `x`.
