@@ -16,7 +16,8 @@
 ;; either in the current crate, a dependency, or the standard library. Finding
 ;; the definition may involve some poking around.
 ;;
-;; # Unqualified name lookups
+;;
+;; # Lexical scoping
 ;;
 ;; Not all name lookups work exactly the same way. An identifier that appears
 ;; after `expr.` or `ty::`, or in a few other syntactic contexts, is qualified.
@@ -25,8 +26,19 @@
 ;;
 ;; All syntax-nodes that can contain unqualified uses must have:
 ;;
-;;     .scope - The lexical scope in which the syntax-node appears--that is, the
-;;         *enclosing* lexical scope.
+;;     .scope - A scope-node that has paths to every definition that's in
+;;         scope-- that is, the *enclosing* lexical scope.
+;;
+;; A node's parent sets its `.scope`, and then the node uses that to resolve
+;; unqualified uses (and to set the `.scope` of its own children).
+;;
+;; ## Inheritance
+;;
+;; The .scope tree is stitched together with edges that point "up" the tree,
+;; toward the root. These trees stop at module nodes, because in Rust, modules
+;; do not inherit access to the enclosing block or module's bindings.
+;;
+;; ## Namespaces
 ;;
 ;; Rust has separate value and type namespaces. That is, every lexical scope
 ;; can contain both value bindings and type bindings, and they're distinct, as
@@ -39,20 +51,14 @@
 ;; symbol `"%types"`; and from every `.scope` that has value bindings to a
 ;; value-namespace node, which pops `"%values"`.
 ;;
-;; Thus references can't just push the identifier and go to the scope.
+;; Thus references can't just push the identifier and exit to the scope.
 ;; References to values must push the identifier, then push `"%values"`, then
-;; go to the scope. References to types must push the type-identifier, then
-;; push `"%types"`, then go to the scope.
+;; exit to the scope. References to types must push the type-identifier, then
+;; push `"%types"`, then exit to the scope.
 ;;
 ;; Lifetimes have their own separate namespace in Rust, but we put them in the
 ;; type-namespace nodes. Since lifetimes always start with an apostrophe, there
 ;; can't be any confusion.
-;;
-;; ## Inheritance
-;;
-;; The .scope tree is stitched together with edges that point "up" the tree,
-;; toward the root. These trees stop at module nodes, because in Rust, modules
-;; do not inherit access to the enclosing block or module's bindings.
 ;;
 ;; ## Definitions
 ;;
