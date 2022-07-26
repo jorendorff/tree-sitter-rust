@@ -63,7 +63,7 @@
 ;;
 ;; Scope nodes have:
 ;;
-;;     .def_values, .def_types - A static-environment rib: has paths to all
+;;     .value_defs, .type_defs - A static-environment rib: has paths to all
 ;;         values/types defined in this scope, and not inherited from an
 ;;         enclosing scope.
 ;;
@@ -74,7 +74,7 @@
 ;;
 ;; Children of scope nodes have:
 ;;
-;;     .item_def_values, .item_def_types - The nodes to which this syntax-node
+;;     .item_value_defs, .item_type_defs - The nodes to which this syntax-node
 ;;         contributes items and imports.
 ;;
 ;; Note: Tree-sitter's Rust parser tries to distinguish various uses of
@@ -152,10 +152,10 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
       ;; Here and throughout, an edge from a scope node to definition nodes has
       ;; precedence 1, higher than scope-inheritance edges (precedence 0), so that
       ;; inner bindings are preferred over (i.e. they shadow) outer bindings.
-      node @pat.def_values
-      attr (@pat.def_values) pop_symbol = "%values"
-      edge @parent.inner_scope -> @pat.def_values
-      attr (@parent.inner_scope -> @pat.def_values) precedence = 1
+      node @pat.value_defs
+      attr (@pat.value_defs) pop_symbol = "%values"
+      edge @parent.inner_scope -> @pat.value_defs
+      attr (@parent.inner_scope -> @pat.value_defs) precedence = 1
     }
 
     node def_loops
@@ -172,10 +172,10 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
       node @parent.inner_scope
       edge @parent.inner_scope -> @parent.scope
 
-      node @pat.def_values
-      attr (@pat.def_values) pop_symbol = "%values"
-      edge @parent.inner_scope -> @pat.def_values
-      attr (@parent.inner_scope -> @pat.def_values) precedence = 1
+      node @pat.value_defs
+      attr (@pat.value_defs) pop_symbol = "%values"
+      edge @parent.inner_scope -> @pat.value_defs
+      attr (@parent.inner_scope -> @pat.value_defs) precedence = 1
     } else {
       let @parent.inner_scope = @parent.scope
     }
@@ -198,7 +198,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (tuple_pattern (_) @pat) @parent
   (tuple_struct_pattern type: (_) (_) @pat) @parent
 ] {
-  let @pat.def_values = @parent.def_values
+  let @pat.value_defs = @parent.value_defs
 }
 
 ;; Assign the children of these expressions the inner_scope of their parents.
@@ -242,7 +242,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ] {
   node @ident.def
   attr (@ident.def) node_definition = @ident
-  edge @ident.def_values -> @ident.def
+  edge @ident.value_defs -> @ident.def
 
   node @ident.type
   node t
@@ -387,13 +387,13 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 
 ;; Tell block-scoped items where to add definitions.
 ;;
-;; (The two scoped variables `.item_def_values` and `item_values` look like
+;; (The two scoped variables `.item_value_defs` and `item_values` look like
 ;; they ought to have the same name, but that wouldn't work. The selector here
 ;; does not select only item children but all children; one of those children
 ;; might be another block, and then there'd be a conflict.)
 (block (_) @child) @parent {
-  let @child.item_def_values = @parent.item_values
-  let @child.item_def_types = @parent.item_types
+  let @child.item_value_defs = @parent.item_values
+  let @child.item_type_defs = @parent.item_types
 }
 
 ;; The next two rules define each child's `.scope`.
@@ -409,11 +409,11 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 (let_declaration pattern: (_)? @pat) @stmt {
   if some @pat {
     ;; Create the "definitions" node for let-bindings.
-    node @pat.def_values
-    attr (@pat.def_values) pop_symbol = "%values"
+    node @pat.value_defs
+    attr (@pat.value_defs) pop_symbol = "%values"
     node @stmt.block_scope_after
-    edge @stmt.block_scope_after -> @pat.def_values
-    attr (@stmt.block_scope_after -> @pat.def_values) precedence = 1
+    edge @stmt.block_scope_after -> @pat.value_defs
+    attr (@stmt.block_scope_after -> @pat.value_defs) precedence = 1
     edge @stmt.block_scope_after -> @stmt.scope
   } else {
     let @stmt.block_scope_after = @stmt.scope
@@ -758,15 +758,15 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (source_file) @root
   (declaration_list) @root
 ] {
-  node @root.def_types
-  attr (@root.def_types) pop_symbol = "%types"
-  edge @root.scope -> @root.def_types
-  attr (@root.scope -> @root.def_types) precedence = 1
+  node @root.type_defs
+  attr (@root.type_defs) pop_symbol = "%types"
+  edge @root.scope -> @root.type_defs
+  attr (@root.scope -> @root.type_defs) precedence = 1
 
-  node @root.def_values
-  attr (@root.def_values) pop_symbol = "%values"
-  edge @root.scope -> @root.def_values
-  attr (@root.scope -> @root.def_values) precedence = 1
+  node @root.value_defs
+  attr (@root.value_defs) pop_symbol = "%values"
+  edge @root.scope -> @root.value_defs
+  attr (@root.scope -> @root.value_defs) precedence = 1
 
   ;; This `%any` namespace is the union of `%types` and `%values`. The .scope
   ;; does not have an edge to this, because all ordinary lexical-scope lookups
@@ -779,17 +779,17 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   node to_values
   attr (to_values) push_symbol = "%values"
   edge @root.def_any -> to_types
-  edge to_types -> @root.def_types
+  edge to_types -> @root.type_defs
   edge @root.def_any -> to_values
-  edge to_values -> @root.def_values
+  edge to_values -> @root.value_defs
 }
 
 [
   (source_file (_) @child) @parent
   (declaration_list (_) @child) @parent
 ] {
-  let @child.item_def_values = @parent.def_values
-  let @child.item_def_types = @parent.def_types
+  let @child.item_value_defs = @parent.value_defs
+  let @child.item_type_defs = @parent.type_defs
 }
 
 [
@@ -847,14 +847,14 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (type_item)
   (union_item)
 ] @item {
-  edge @item.item_def_types -> @item.def
+  edge @item.item_type_defs -> @item.def
 }
 
 ;; # Bindings for items in the value namespace
 
 ;; Bind fn items in the value namespace.
 (function_item) @item {
-  edge @item.item_def_values -> @item.def
+  edge @item.item_value_defs -> @item.def
 }
 
 ;; Attach the declared return type of fn items that have a simple return type.
@@ -882,7 +882,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (const_item type: (_) @type)
   (static_item type: (_) @type)
 ] @item {
-  edge @item.item_def_values -> @item.def
+  edge @item.item_value_defs -> @item.def
 
   node t
   attr (t) pop_symbol = "%type"
@@ -894,7 +894,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; struct type and its constructor. The type of the constructor is a function
 ;; type whose return type is the struct itself.
 (struct_item body: (ordered_field_declaration_list)) @item {
-  edge @item.item_def_values -> @item.def
+  edge @item.item_value_defs -> @item.def
 
   node t1
   attr (t1) pop_symbol = "%type"
@@ -909,7 +909,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; struct type and its constructor.
 (struct_item body: (_)? @body) @item {
   if none @body {
-    edge @item.item_def_values -> @item.def
+    edge @item.item_value_defs -> @item.def
 
     node t
     attr (t) pop_symbol = "%type"
@@ -929,8 +929,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; TODO - See if this can be made any tidier.
 
 [(parameters) (closure_parameters)] @parameters {
-  node @parameters.def_values
-  attr (@parameters.def_values) pop_symbol = "%values"
+  node @parameters.value_defs
+  attr (@parameters.value_defs) pop_symbol = "%values"
 }
 
 [
@@ -938,17 +938,17 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (parameters (self_parameter) @child)
   (closure_parameters (_) @child)
 ] @parameters {
-  let @child.def_values = @parameters.def_values
+  let @child.value_defs = @parameters.value_defs
 }
 
 (parameter pattern: (_) @pat) @param {
-  let @pat.def_values = @param.def_values
+  let @pat.value_defs = @param.value_defs
 }
 
 (self_parameter (self) @self) @param {
   node @self.def
   attr (@self.def) node_definition = @self
-  edge @param.def_values -> @self.def
+  edge @param.value_defs -> @self.def
 }
 
 (closure_expression) @closure {
@@ -961,8 +961,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (function_item parameters: (_) @parameters body: (_) @body)
 ] @parent {
   node @body.scope
-  edge @body.scope -> @parameters.def_values
-  attr (@body.scope -> @parameters.def_values) precedence = 1
+  edge @body.scope -> @parameters.value_defs
+  attr (@body.scope -> @parameters.value_defs) precedence = 1
   edge @body.scope -> @parent.inner_scope
 }
 
@@ -1064,8 +1064,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 
   ;; Use from_root as the definition node for this source file.
   let @root.def = from_root
-  edge from_root -> @root.def_types
-  edge from_root -> @root.def_values
+  edge from_root -> @root.type_defs
+  edge from_root -> @root.value_defs
   edge from_root -> @root.def_any
 
   ;; Bind `self` to a node with the same out-edges as @root.def. (Can't use the
@@ -1073,15 +1073,15 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   ;; = "pop_symbol" can be definitions.)
   node self
   attr (self) source_node = @root, pop_symbol = "self", is_definition
-  edge @root.def_types -> self
-  edge self -> @root.def_types
-  edge self -> @root.def_values
+  edge @root.type_defs -> self
+  edge self -> @root.type_defs
+  edge self -> @root.value_defs
   edge self -> @root.def_any
 
   ;; Bind `super` to the to_super path.
   node pop_super
   attr (pop_super) pop_symbol = "super"
-  edge @root.def_types -> pop_super
+  edge @root.type_defs -> pop_super
   edge pop_super -> to_super
 
   ;; Bind `%anyfile` to a graph path that pushes this module's canonical name,
@@ -1120,17 +1120,17 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; Install a path from a module definition to the types defined inside it.
 ;; Also hook up `self`, `super`, and `crate` for declared modules.
 (mod_item name: (identifier) @name body: (declaration_list) @body) @mod {
-  edge @mod.def -> @body.def_values
-  edge @mod.def -> @body.def_types
+  edge @mod.def -> @body.value_defs
+  edge @mod.def -> @body.type_defs
   edge @mod.def -> @body.def_any
 
   ;; Define `self` as a node effectively identical to `@mod.def`. (Can't use
   ;; the same node because TSG doesn't support aliases.)
   node self
   attr (self) source_node = @name, pop_symbol = "self", is_definition
-  edge @body.def_types -> self
-  edge self -> @body.def_values
-  edge self -> @body.def_types
+  edge @body.type_defs -> self
+  edge self -> @body.value_defs
+  edge self -> @body.type_defs
   edge self -> @body.def_any
 
   ;; Bind `super` in a declared module as an alias for `self` in the enclosing
@@ -1141,7 +1141,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   attr (super_1) push_symbol = "self"
   node super_2
   attr (super_2) push_symbol = "%types"
-  edge @body.def_types -> super
+  edge @body.type_defs -> super
   edge super -> super_1
   edge super_1 -> super_2
   edge super_2 -> @mod.scope
@@ -1150,8 +1150,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; Trait members are not in scope for unqualified access, but they can be
 ;; accessed by paths via the trait.
 (trait_item body: (declaration_list) @decls) @trait {
-  edge @trait.def -> @decls.def_values
-  edge @trait.def -> @decls.def_types
+  edge @trait.def -> @decls.value_defs
+  edge @trait.def -> @decls.type_defs
 }
 
 ;; Install a path from a struct definition to its fields.
@@ -1769,7 +1769,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   } else {
     attr (type_relay) type = "pop_symbol", node_symbol = @name
   }
-  edge @import.item_def_types -> type_relay
+  edge @import.item_type_defs -> type_relay
   if some @crate_root {
     edge type_relay -> @crate_root.use
   } else {
@@ -1794,7 +1794,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
     attr (value_relay1) type = "push_symbol", node_symbol = @name
     node value_relay2
     attr (value_relay2) push_symbol = "%values"
-    edge @import.item_def_values -> value_relay
+    edge @import.item_value_defs -> value_relay
     edge value_relay -> value_relay1
     edge value_relay1 -> value_relay2
     edge value_relay2 -> @name.scope
@@ -1842,8 +1842,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (_ (scoped_use_list) @child)
   (_ (use_as_clause) @child)
 ] @parent {
-  let @child.item_def_types = @parent.item_def_types
-  let @child.item_def_values = @parent.item_def_values
+  let @child.item_type_defs = @parent.item_type_defs
+  let @child.item_value_defs = @parent.item_value_defs
 }
 
 
