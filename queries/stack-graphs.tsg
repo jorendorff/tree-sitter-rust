@@ -453,48 +453,49 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; Items in a block are visible throughout the block. Let-declaration bindings
 ;; in a block are visible starting with the next statement or expression.
 ;;
-;; *   `.item_scope` - On block nodes. Scope in which block-scoped items are
-;;     defined. Has edges to the "%types" and "%values" namespaces.
+;; *   `.block_item_scope` - On block nodes. Scope in which block-scoped items
+;;     are defined. Has edges to the "%types" and "%values" namespaces.
 ;;
-;; *   `.item_values`, `.item_types` - On block nodes. Namespace nodes. These
-;;     have edges to the types and values defined in the scope. These are the
-;;     nodes that serve as `@child.item_value_defs` and `@child.item_type_defs`
-;;     for each child. Note that `.item_values` does not contain any
-;;     `let`-bindings, only `const/static` and tuple-struct bindings.
+;; *   `.block_item_value_defs`, `.block_item_type_defs` - On block nodes.
+;;     Namespace nodes. These have edges to the types and values defined in the
+;;     scope. These are the nodes that serve as `@child.item_value_defs` and
+;;     `@child.item_type_defs` for each child. `.block_item_value_defs` does
+;;     not contain any `let`-bindings, only const, static, and tuple-struct
+;;     bindings.
 ;;
-;; *   `.item_scope_uses` - On block nodes. Dual of `.item_scope`. Has inbound
-;;     edges from type definitions in the block; leads to all uses of those
-;;     type names.
+;; *   `.block_item_scope_uses` - On block nodes. Dual of `.block_item_scope`.
+;;     Has inbound edges from type definitions in the block; leads to all uses
+;;     of those type names.
 ;;
-;; *   `.item_types_uses` - On block nodes. Dual of .item_types`. Leads to type
-;;     uses in item definitions in the block. Used as `@child.item_type_uses`
-;;     for each child.
+;; *   `.block_item_type_uses` - On block nodes. Dual of
+;;     `.block_item_type_defs`. Leads to type uses in items in the block. Used
+;;     as `@child.item_type_uses` for each child.
 ;;
 ;; *   `.block_scope_after` - Defined on every child of a block. Determined by
 ;;     that child. The scope for the next child.
 
 ;; Create the item scope.
 (block) @block {
-  node @block.item_scope
-  edge @block.item_scope -> @block.scope
+  node @block.block_item_scope
+  edge @block.block_item_scope -> @block.scope
 
-  node @block.item_values
-  attr (@block.item_values) pop_symbol = "%values"
-  edge @block.item_scope -> @block.item_values
-  attr (@block.item_scope -> @block.item_values) precedence = 1
+  node @block.block_item_value_defs
+  attr (@block.block_item_value_defs) pop_symbol = "%values"
+  edge @block.block_item_scope -> @block.block_item_value_defs
+  attr (@block.block_item_scope -> @block.block_item_value_defs) precedence = 1
 
-  node @block.item_types
-  attr (@block.item_types) pop_symbol = "%types"
-  edge @block.item_scope -> @block.item_types
-  attr (@block.item_scope -> @block.item_types) precedence = 1
+  node @block.block_item_type_defs
+  attr (@block.block_item_type_defs) pop_symbol = "%types"
+  edge @block.block_item_scope -> @block.block_item_type_defs
+  attr (@block.block_item_scope -> @block.block_item_type_defs) precedence = 1
 
   ;; Duals
-  node @block.item_scope_uses
-  edge @block.scope_uses -> @block.item_scope_uses
+  node @block.block_item_scope_uses
+  edge @block.scope_uses -> @block.block_item_scope_uses
 
-  node @block.item_types_uses
-  attr (@block.item_types_uses) push_symbol = "%type_uses"
-  edge @block.item_types_uses -> @block.item_scope_uses
+  node @block.block_item_type_uses
+  attr (@block.block_item_type_uses) push_symbol = "%type_uses"
+  edge @block.block_item_type_uses -> @block.block_item_scope_uses
 }
 
 ;; Tell block-scoped items where to add definitions.
@@ -504,14 +505,14 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; does not select only item children but all children; one of those children
 ;; might be another block, and then there'd be a conflict.)
 (block (_) @child) @parent {
-  let @child.item_value_defs = @parent.item_values
-  let @child.item_type_defs = @parent.item_types
-  let @child.item_type_uses = @parent.item_types_uses
+  let @child.item_value_defs = @parent.block_item_value_defs
+  let @child.item_type_defs = @parent.block_item_type_defs
+  let @child.item_type_uses = @parent.block_item_type_uses
 }
 
 ;; The next two rules define each child's `.scope`.
 (block . (_) @first_child) @block {
-  let @first_child.scope = @block.item_scope
+  let @first_child.scope = @block.block_item_scope
 }
 
 (block (_) @prev . (_) @next) @block {
@@ -521,7 +522,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; Dual to the above two rules. Asymmetric because let-bindings aren't in the
 ;; scope_uses tree.
 (block (_) @child) @block {
-  let @child.scope_uses = @block.item_scope_uses
+  let @child.scope_uses = @block.block_item_scope_uses
 }
 
 ;; The next two rules define `.block_scope_after` for each statement child.
