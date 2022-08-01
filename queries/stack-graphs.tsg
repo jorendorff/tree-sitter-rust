@@ -55,10 +55,10 @@
 ;; necessary to support method lookups, since in Rust methods can be defined
 ;; anywhere the type name is accessible.
 ;;
-;; *   `.use` - On type references. This is the dual of `.def`. It's a scope-
-;;     node that pops the name being used.
+;; *   `.use` - On type references. This is the dual of `.to_def`. It's a
+;;     scope-node that pops the name being used.
 ;;
-;; *   `.to_uses` - On type definitions. This is the dual of `.to_def`. It's a
+;; *   `.to_uses` - On type definitions. This is the dual of `.def`. It's a
 ;;     scope-node that leads to all uses of the type name being defined,
 ;;     including via type aliases and imports.
 ;;
@@ -100,14 +100,14 @@
 ;;     values/types defined in this scope, and not inherited from an enclosing
 ;;     scope.
 ;;
-;; These are sometimes stitched together with edges that point "down" the
-;; syntax-tree, toward the leaves, which is necessary (e.g. in pattern syntax
-;; and in imports) when we can't match the full path from a scope to a binding
-;; with a single tree-sitter query. ??? TODO - is this true about leafward
-;; edges, or is it stitched using `let @child.value_defs = @parent.value_defs`?
+;; These are sometimes propagated "down" the syntax-tree, toward the leaves,
+;; which is necessary (e.g. in pattern syntax and in imports) when we can't
+;; match the full path from a scope to a binding with a single tree-sitter
+;; query.
 ;;
-;; Children of syntax-nodes that introduce scopes (`block`s, `function_item`s,
-;; `source_file`, and a few others) have:
+;; Nodes that appear in a context where item or import bindings can be
+;; introduced--that is, all direct children of `(block)`, `(declaration_list)`,
+;; and `(source_file)` nodes, and a few others--have:
 ;;
 ;; *   `.item_value_defs`, `.item_type_defs` - The scope-nodes to which this
 ;;     syntax-node contributes items and imports.
@@ -178,21 +178,22 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; Expressions that introduce local bindings, either with patterns or loop
 ;; labels.
 ;;
-;; *   `.inner_scope` - On several kinds of nodes that introduce a nested scope
-;;     and have a "body": these expressions, functions, closures, and generics.
-;;     The nested body scope.
+;; *   `.inner_scope` - On expression nodes that introduce a nested scope and
+;;     have a "body". The nested body scope. (For generics, see
+;;     `.generic_scope`. For function and closure body scopes, see "Function
+;;     and closure parameters".)
 ;;
 ;; *   `.inner_scope_uses` - On the same nodes as `.inner_scope`. The dual of
 ;;     `.inner_scope`. Has in-edges from definitions in the inner scope. Leads
-;;     outward to all uses.
+;;     leafward to all uses.
 [
-  (for_expression (loop_label)? @label pattern: (_) @pat) @parent
-  (if_let_expression pattern: (_) @pat) @parent
-  (loop_expression (loop_label)? @label) @parent
-  (match_arm pattern: (_) @pat) @parent
-  (while_expression (loop_label)? @label) @parent
-  (while_let_expression (loop_label)? @label pattern: (_) @pat) @parent
-] {
+  (for_expression (loop_label)? @label pattern: (_) @pat)
+  (if_let_expression pattern: (_) @pat)
+  (loop_expression (loop_label)? @label)
+  (match_arm pattern: (_) @pat)
+  (while_expression (loop_label)? @label)
+  (while_let_expression (loop_label)? @label pattern: (_) @pat)
+] @parent {
   if some @label {
     node @parent.inner_scope
     edge @parent.inner_scope -> @parent.scope
@@ -315,6 +316,14 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 
 ;; ## Generic parameters
 ;;
+;; *   `.generic_scope` - On items that can have generics. The scope that
+;;     contains generic parameters. (As an implementation detail, this
+;;     exists on closures, too.)
+;;
+;; *   `.generic_scope_uses` - On the same items as `.generic_scope`. The
+;;     dual of `.generic_scope`. Contains in-edges from the `.to_uses` of each
+;;     generic parameter definition. Leads leafward to all their uses.
+;;
 ;; *   `.const_param_defs` - On items with type parameters. Node that pops
 ;;     %values and has edges to each const parameter definition.
 ;;
@@ -326,44 +335,44 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;;     of `.type_param_defs`. Node that pushes "%types" and leads to
 ;;     all uses of type names defined in the current scope.
 [
-  (associated_type type_parameters: (type_parameters)? @params) @parent
-  (enum_item type_parameters: (type_parameters)? @params) @parent
-  (function_item type_parameters: (type_parameters)? @params) @parent
-  (function_signature_item type_parameters: (type_parameters)? @params) @parent
-  (impl_item type_parameters: (type_parameters)? @params) @parent
-  (struct_item type_parameters: (type_parameters)? @params) @parent
-  (trait_item type_parameters: (type_parameters)? @params) @parent
-  (type_item type_parameters: (type_parameters)? @params) @parent
-  (union_item type_parameters: (type_parameters)? @params) @parent
-  (function_type (for_lifetimes)? @params) @parent
-] {
+  (associated_type type_parameters: (type_parameters)? @params)
+  (enum_item type_parameters: (type_parameters)? @params)
+  (function_item type_parameters: (type_parameters)? @params)
+  (function_signature_item type_parameters: (type_parameters)? @params)
+  (impl_item type_parameters: (type_parameters)? @params)
+  (struct_item type_parameters: (type_parameters)? @params)
+  (trait_item type_parameters: (type_parameters)? @params)
+  (type_item type_parameters: (type_parameters)? @params)
+  (union_item type_parameters: (type_parameters)? @params)
+  (function_type (for_lifetimes)? @params)
+] @parent {
   if some @params {
-    node @parent.inner_scope
-    edge @parent.inner_scope -> @parent.scope
+    node @parent.generic_scope
+    edge @parent.generic_scope -> @parent.scope
 
     node @params.const_param_defs
     attr (@params.const_param_defs) pop_symbol = "%values"
-    edge @parent.inner_scope -> @params.const_param_defs
-    attr (@parent.inner_scope -> @params.const_param_defs) precedence = 1
+    edge @parent.generic_scope -> @params.const_param_defs
+    attr (@parent.generic_scope -> @params.const_param_defs) precedence = 1
 
     node @params.type_param_defs
     attr (@params.type_param_defs) pop_symbol = "%types"
-    edge @parent.inner_scope -> @params.type_param_defs
-    attr (@parent.inner_scope -> @params.type_param_defs) precedence = 1
+    edge @parent.generic_scope -> @params.type_param_defs
+    attr (@parent.generic_scope -> @params.type_param_defs) precedence = 1
 
     ;; Duals.
-    node @parent.inner_scope_uses
-    edge @parent.scope_uses -> @parent.inner_scope_uses
+    node @parent.generic_scope_uses
+    edge @parent.scope_uses -> @parent.generic_scope_uses
 
     node @params.type_param_uses
     attr (@params.type_param_uses) push_symbol = "%type_uses"
-    edge @params.type_param_uses -> @parent.inner_scope_uses
+    edge @params.type_param_uses -> @parent.generic_scope_uses
     ;; XXX TODO - explain why no precedence here
   } else {
     ;; An item that could have type parameters, but in fact doesn't, also needs
-    ;; an `.inner_scope`, but it's just the same node as the enclosing scope.
-    let @parent.inner_scope = @parent.scope
-    let @parent.inner_scope_uses = @parent.scope_uses
+    ;; a `.generic_scope`, but it's just the same node as the enclosing scope.
+    let @parent.generic_scope = @parent.scope
+    let @parent.generic_scope_uses = @parent.scope_uses
   }
 }
 
@@ -386,9 +395,16 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   attr (@ident.def) node_definition = @ident
   edge @params.type_param_defs -> @ident.def
 
+  ;; Dual
   node @ident.to_uses
-  attr (@ident.to_uses) pop_symbol = "%uses"
+  attr (@ident.to_uses) push_symbol = (source-text @ident)
   edge @ident.to_uses -> @params.type_param_uses
+
+  ;; Bridge from def to uses
+  node u
+  attr (u) pop_symbol = "%uses"
+  edge @ident.def -> u
+  edge u -> @ident.to_uses
 }
 
 (type_parameters (const_parameter name: (_) @ident)) @params {
@@ -407,7 +423,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   edge t -> @type.to_def
 }
 
-;; Direct children of generics get the inner scope.
+;; Direct children of generics get the scope that contains generic parameter
+;; bindings.
 ;;
 ;; This lists all contexts in most items, except the name,
 ;; and all contexts within a function except the name and the body;
@@ -444,8 +461,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (function_type parameters: (_) @child) @parent
   (function_type return_type: (_) @child) @parent
 ] {
-  let @child.scope = @parent.inner_scope
-  let @child.scope_uses = @parent.inner_scope_uses
+  let @child.scope = @parent.generic_scope
+  let @child.scope_uses = @parent.generic_scope_uses
 }
 
 ;; ## Block scopes
@@ -879,48 +896,65 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   let u = (node)
   attr (u) pop_symbol = "%type_uses"
   edge u -> @ident.use
-  edge @ident.scope -> u
+  edge @ident.scope_uses -> u
 }
 
 
 
 ;; # Item definitions
 ;;
-;; *   `.def_any` - ??? Don't know what this is.
+;; *   `.def_any` - On `(mod_item)` nodes. The node that pops `"%any"` and
+;;     leads to both type and value bindings. Used by imports.
 
 [
-  (source_file) @root
-  (declaration_list) @root
+  (source_file) @body
+  (mod_item body: (declaration_list) @body)
+  (foreign_mod_item body: (declaration_list) @body)
+  (impl_item body: (declaration_list) @body) @impl_or_trait
+  (trait_item body: (declaration_list) @body) @impl_or_trait
 ] {
-  node @root.type_defs
-  attr (@root.type_defs) pop_symbol = "%types"
-  edge @root.scope -> @root.type_defs
-  attr (@root.scope -> @root.type_defs) precedence = 1
+  ;; `impl` and `trait` items contain definitions, but the defined items are
+  ;; not bound in the lexical scope. However, they also should have a lexical
+  ;; scope that binds `Self` (TODO).
+  var defs = #null
+  if some @impl_or_trait {
+    set defs = @impl_or_trait.impl_or_trait_defs
+  } else {
+    set defs = @body.scope
+  }
 
-  node @root.value_defs
-  attr (@root.value_defs) pop_symbol = "%values"
-  edge @root.scope -> @root.value_defs
-  attr (@root.scope -> @root.value_defs) precedence = 1
+  node @body.type_defs
+  attr (@body.type_defs) pop_symbol = "%types"
+  edge defs -> @body.type_defs
+  attr (defs -> @body.type_defs) precedence = 1
 
-  ;; This `%any` namespace is the union of `%types` and `%values`. The .scope
-  ;; does not have an edge to this, because all ordinary lexical-scope lookups
-  ;; are for either a type or a value. Imports use it, because the `use` syntax
-  ;; is the same whether importing types or values.
-  node @root.def_any
-  attr (@root.def_any) pop_symbol = "%any"
-  node to_types
-  attr (to_types) push_symbol = "%types"
-  node to_values
-  attr (to_values) push_symbol = "%values"
-  edge @root.def_any -> to_types
-  edge to_types -> @root.type_defs
-  edge @root.def_any -> to_values
-  edge to_values -> @root.value_defs
+  node @body.value_defs
+  attr (@body.value_defs) pop_symbol = "%values"
+  edge defs -> @body.value_defs
+  attr (defs -> @body.value_defs) precedence = 1
 
-  ;; Dual of "%types".
-  node @root.type_uses
-  attr (@root.type_uses) push_symbol = "%type_uses"
-  edge @root.type_uses -> @root.scope_uses
+  if none @impl_or_trait {
+    ;; This `%any` namespace is the union of `%types` and `%values`. The .scope
+    ;; does not have an edge to this, because all ordinary lexical-scope lookups
+    ;; are for either a type or a value. Imports use it, because the `use` syntax
+    ;; is the same whether importing types or values.
+    node @body.def_any
+    attr (@body.def_any) pop_symbol = "%any"
+    node to_types
+    attr (to_types) push_symbol = "%types"
+    node to_values
+    attr (to_values) push_symbol = "%values"
+    edge @body.def_any -> to_types
+    edge to_types -> @body.type_defs
+    edge @body.def_any -> to_values
+    edge to_values -> @body.value_defs
+
+    ;; Dual of "%types" for lexical scopes. XXX ??? Not sure what if anything
+    ;; to do for uses of items defined in `impl` and `trait` bodies.
+    node @body.type_uses
+    attr (@body.type_uses) push_symbol = "%type_uses"
+    edge @body.type_uses -> @body.scope_uses
+  }
 }
 
 [
@@ -945,9 +979,33 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   node @item.def
   attr (@item.def) node_definition = @name
 
+  ;; Dual
   node @item.to_uses
-  attr (@item.to_uses) pop_symbol = "%uses"
-  edge @item.def -> @item.to_uses
+  attr (@item.to_uses) push_symbol = (source-text @name)
+
+  ;; Bridge from def to uses
+  node u
+  attr (u) pop_symbol = "%uses"
+  edge @item.def -> u
+  edge u -> @item.to_uses
+}
+
+[
+  (enum_item name: (_) @name)
+  (struct_item name: (_) @name)
+  (trait_item name: (_) @name)
+  (union_item name: (_) @name)
+] @item {
+  node m1
+  attr (m1) pop_symbol = "%methods"
+  node m2
+  attr (m2) push_symbol = "%values"
+  node m3
+  attr (m3) push_symbol = "%impls"
+  edge @item.def -> m1
+  edge m1 -> m2
+  edge m2 -> m3
+  edge m3 -> @item.to_uses
 }
 
 (mod_item name: (_) @name body: (_)? @body) @item {
@@ -955,9 +1013,15 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
     node @item.def
     attr (@item.def) node_definition = @name
 
+    ;; Dual
     node @item.to_uses
-    attr (@item.to_uses) pop_symbol = "%uses"
-    edge @item.def -> @item.to_uses
+    attr (@item.to_uses) push_symbol = (source-text @name)
+
+    ;; Bridge from def to uses
+    node u
+    attr (u) pop_symbol = "%uses"
+    edge @item.def -> u
+    edge u -> @item.to_uses
   } else {
     ;; The difficult case: find the node for this module in another file.
     node @item.def
@@ -1069,6 +1133,23 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   }
 }
 
+;; *   `.impl_or_trait_defs` - On `(impl_item)` and `(trait_item)` nodes.
+;;     The node that has `%values` and `%types` edges leading to the defined
+;;     methods and/or other items.
+[
+  (impl_item)
+  (trait_item)
+] @item {
+  node @item.impl_or_trait_defs
+}
+
+;; Support looking up all impls of a type from its definition via `"%uses"`.
+(impl_item type: (_) @type) @item {
+  node impls
+  attr (impls) pop_symbol = "%impls"
+  edge @type.use -> impls
+  edge impls -> @item.impl_or_trait_defs
+}
 
 
 
@@ -1104,8 +1185,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 
 (closure_expression) @closure {
   ;; Used below. Just an alias, because closures don't have type parameters.
-  let @closure.inner_scope = @closure.scope
-  let @closure.inner_scope_uses = @closure.scope_uses
+  let @closure.generic_scope = @closure.scope
+  let @closure.generic_scope_uses = @closure.scope_uses
 }
 
 [
@@ -1115,12 +1196,12 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   node @body.scope
   edge @body.scope -> @parameters.value_defs
   attr (@body.scope -> @parameters.value_defs) precedence = 1
-  edge @body.scope -> @parent.inner_scope
+  edge @body.scope -> @parent.generic_scope
 
   ;; Dual. This new scope isn't really necessary, as it never has any type
   ;; bindings in it, but we keep it for symmetry.
   node @body.scope_uses
-  edge @parent.inner_scope_uses -> @body.scope_uses
+  edge @parent.generic_scope_uses -> @body.scope_uses
 }
 
 
@@ -2042,9 +2123,11 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; Identifiers in import context, qualified by a scoped_use_list.
 ;;
 ;; There is different code for the identifier at the start of a path.
-;; Awkwardly, with use-lists it is possible for the same identifier to be both
-;; the start and the end of a path, and it's hard to tell when that's happening
-;; using only tree-sitter queries. Consider `use {{foo}};`.
+;;
+;; Bug: With use-lists it is possible for the same identifier to be both the
+;; start and the end of a path, and it's hard to tell when that's happening
+;; using only tree-sitter queries. We only implement a single level of
+;; use-list; `use {{foo}};` does not work.
 [
   (scoped_use_list (use_list (identifier) @ident))
   (scoped_use_list (use_list (use_as_clause path: (identifier) @ident)))
@@ -2065,7 +2148,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   attr (@ident.use) pop_symbol = (source-text @ident)
 
   node u
-  attr (u) push_symbol = "%type_uses"
+  attr (u) pop_symbol = "%type_uses"  ;; %type_uses as dual of %any ???
   edge u -> @ident.use
   edge @ident.scope_uses -> u
 }
