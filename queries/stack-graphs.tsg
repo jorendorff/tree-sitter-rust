@@ -10,7 +10,7 @@
 ;; The others, unqualified names, are simply ("simply"!) looked up in the
 ;; enclosing lexical scope.
 ;;
-;; All nodes that can contain unqualified uses must have:
+;; All syntax-nodes that can contain unqualified uses must have:
 ;;
 ;;     .scope - The lexical scope in which the syntax-node appears--that is, the
 ;;         *enclosing* lexical scope.
@@ -223,12 +223,19 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (mut_pattern (mutable_specifier) (identifier) @ident)
   (ref_pattern (identifier) @ident)
   (captured_pattern (identifier) @ident "@" (_))
+  (captured_pattern (identifier) "@" (identifier) @ident)
   (reference_pattern "&" (mutable_specifier)? (identifier) @ident)
   (or_pattern (identifier) @ident)
 ] {
   node @ident.def
   attr (@ident.def) node_definition = @ident
   edge @ident.def_values -> @ident.def
+
+  node @ident.type
+  node t
+  attr (t) pop_symbol = "%type"
+  edge @ident.def -> t
+  edge t -> @ident.expected_type
 }
 
 ;; ## Generic parameters
@@ -261,8 +268,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
     edge @parent.inner_scope -> @params.type_param_defs
     attr (@parent.inner_scope -> @params.type_param_defs) precedence = 1
   } else {
-    ;; Items that could have type parameters, but in fact don't, also need
-    ;; `inner` nodes, but they're just the same node as the enclosing ones.
+    ;; An item that could have type parameters, but in fact doesn't, also needs
+    ;; an `.inner_scope`, but it's just the same node as the enclosing scope.
     let @parent.inner_scope = @parent.scope
   }
 }
@@ -291,6 +298,17 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   node @ident.def
   attr (@ident.def) node_definition = @ident
   edge @params.const_param_defs -> @ident.def
+}
+
+(const_parameter
+  name: (_) @ident
+  type: (_) @type
+) {
+  node t
+  attr (t) pop_symbol = "%type"
+  edge @ident.def -> t
+  edge t -> @type.use
+
 }
 
 ;; Direct children of generics get the inner scope.
@@ -646,6 +664,10 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   attr (v) push_symbol = "%values"
   edge @ident.use -> v
   edge v -> @ident.scope
+
+  node @ident.type
+  attr (@ident.type) push_symbol = "%type"
+  edge @ident.type -> @ident.use
 }
 
 ;; ## Identifiers in type context
@@ -803,24 +825,6 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   }
 }
 
-;; Bind items in the value namespace. Note: We bind tuple structs in both
-;; namespaces. Same for unit structs (the next rule below). Structs with named
-;; fields are bound only in the type namespace.
-[
-  (const_item)
-  (static_item)
-  (struct_item body: (ordered_field_declaration_list))
-  (function_item)
-] @item {
-  edge @item.item_def_values -> @item.def
-}
-
-(struct_item body: (_)? @body) @item {
-  if none @body {
-    edge @item.item_def_values -> @item.def
-  }
-}
-
 ;; Bind items in the type namespace.
 [
   (enum_item)
@@ -832,6 +836,75 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ] @item {
   edge @item.item_def_types -> @item.def
 }
+
+;; # Bindings for items in the value namespace
+
+;; Bind fn items in the value namespace.
+(function_item) @item {
+  edge @item.item_def_values -> @item.def
+}
+
+;; Attach the declared return type of fn items that have a simple return type.
+;; (If the function returns a type we can't resolve, or the return type is
+;; implicitly unit, we don't bother.)
+(function_item
+  return_type: [
+    ;; List of nodes matching `$._type` that have `.use`
+    (type_identifier)
+    (scoped_type_identifier)
+  ] @rtype
+) @item {
+  node t1
+  attr (t1) pop_symbol = "%type"
+  node t2
+  attr (t2) pop_symbol = "%rtype"
+  edge @item.def -> t1
+  edge t1 -> t2
+  edge t2 -> @rtype.use
+}
+
+;; Bind const and static items in the value namespace and attach their declared
+;; type.
+[
+  (const_item type: (_) @type)
+  (static_item type: (_) @type)
+] @item {
+  edge @item.item_def_values -> @item.def
+
+  node t
+  attr (t) pop_symbol = "%type"
+  edge @item.def -> t
+  edge t -> @type.use
+}
+
+;; Bind tuple-like structs in the value namespace. We use the same node for the
+;; struct type and its constructor. The type of the constructor is a function
+;; type whose return type is the struct itself.
+(struct_item body: (ordered_field_declaration_list)) @item {
+  edge @item.item_def_values -> @item.def
+
+  node t1
+  attr (t1) pop_symbol = "%type"
+  node t2
+  attr (t2) pop_symbol = "%rtype"
+  edge @item.def -> t1
+  edge t1 -> t2
+  edge t2 -> @item.def
+}
+
+;; Bind unit-like structs in the value namespace. We use the same node for the
+;; struct type and its constructor.
+(struct_item body: (_)? @body) @item {
+  if none @body {
+    edge @item.item_def_values -> @item.def
+
+    node t
+    attr (t) pop_symbol = "%type"
+    edge @item.def -> t
+    edge t -> @item.def
+  }
+}
+
 
 
 
@@ -1079,10 +1152,15 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   attr (@fields.fields) pop_symbol = "%fields"
 }
 
-(field_declaration_list (field_declaration name: (_) @field)) @fields {
+(field_declaration_list (field_declaration name: (_) @field type: (_) @type)) @fields {
   node @field.def
   attr (@field.def) node_definition = @field
   edge @fields.fields -> @field.def
+
+  node t
+  attr (t) pop_symbol = "%type"
+  edge @field.def -> t
+  edge t -> @type.use
 }
 
 ;; Install paths from an enum to its variants.
@@ -1244,15 +1322,11 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   let @parent.use = @trait.use
 }
 
-(scoped_identifier path: (generic_type) @parent) {
-  ;; Dummy node to avoid "undefined scoped variable". Not hooked up yet.
-  node @parent.use
-}
 
 ;; ## Marking the context of expressions
 ;;
-;; This is for scoped identifiers. The context of a path determines which
-;; namespace to search.
+;; This is for scoped identifiers and fields/methods. The context of a path
+;; determines which namespace to search.
 
 ;; Note: This is a complete copy of the huge list under "Marking unqualified
 ;; references". Obviously the duplication is very bad. I don't know how else to
@@ -1269,7 +1343,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (binary_expression left: (_) @here)
   (binary_expression right: (_) @here)
   (break_expression (_) @here)
-  (call_expression function: (_) @here)
+  (call_expression function: (_) @here) @call
   (compound_assignment_expr left: (_) @here)
   (compound_assignment_expr right: (_) @here)
   (field_expression value: (_) @here)
@@ -1307,6 +1381,12 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (static_item value: (_) @here)
 ] {
   let @here.context = "%values"
+
+  if some @call {
+    let @here.fcontext = "%methods"
+  } else {
+    let @here.fcontext = "%fields"
+  }
 }
 
 ;; Note: This is a complete copy of the second huge list under "Marking
@@ -1384,7 +1464,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (field_pattern pattern: (_) @here)
   (mut_pattern (mutable_specifier) (_) @here)
   (ref_pattern (_) @here)
-  (captured_pattern (_) @here "@" (_))
+  (captured_pattern (identifier) @here "@" (_))
+  (captured_pattern (identifier) "@" (_) @here)
   (reference_pattern "&" (mutable_specifier)? (_) @here)
   (or_pattern (_) @here)
 ] {
@@ -1458,8 +1539,25 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 
 
 ;; # Fields
-;; Link fields in struct expressions and patterns to their definitions.
 
+;; Link identifiers after `.` to the corresponding field or method definition.
+;;
+;; Note: Method calls parse as (call_expression function: (field_expression)),
+;; so this rule covers uses of both fields and methods.
+(field_expression value: (_) @value field: (_) @field) @expr {
+  node @field.use
+  attr (@field.use) node_reference = @field
+  node f1
+  attr (f1) push_symbol = @expr.fcontext ;; either "%fields" or "%method"
+  edge @field.use -> f1
+  edge f1 -> @value.type
+
+  node @expr.type
+  attr (@expr.type) push_symbol = "%type"
+  edge @expr.type -> @field.use
+}
+
+;; Link fields in struct expressions and patterns to their definitions.
 [
   (struct_expression
     body: (field_initializer_list
@@ -1733,4 +1831,286 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ] @parent {
   let @child.item_def_types = @parent.item_def_types
   let @child.item_def_values = @parent.item_def_values
+}
+
+
+
+;; # Types
+;;
+;; Some nodes in the output graph represent types. Definitions of structs,
+;; enums, and unions are an example. Function types are also represented as
+;; stack-graph nodes with a special `"%rtype"` edge. The purpose of these nodes
+;; is to provide access to the type's fields and methods, since we need to
+;; resolve those too, not just item names and variables.
+;;
+;; To find the method `moo` in `cow.moo()`, push `"moo" "%methods" "%type"
+;; "cow" "%values"` (with `"%values"` on top) and exit to the lexical scope.
+;; The meaning of this sequence is:
+;;
+;; -   `"%values"` - look in the values namespace
+;; -   `"cow"` - find the definition of `cow`
+;; -   `"%type"` - get the type of `cow`
+;; -   `"%methods"` - look in that type's methods
+;; -   `"moo"` - find the definition of the `moo` method
+;;
+;; The type inference scheme has four parts:
+;;
+;; 1.  Linking type-expressions in the syntax tree to types in the scope graph.
+;;     Each syntax-node that's a Rust type a `.use` scoped variable, a
+;;     scope-node that leads to the type definition.
+;;
+;; 2.  Linking patterns to expected types. Each syntax-node that's a pattern
+;;     has a `.expected_type` scoped variable that leads to a type definition,
+;;     based on the pattern's context (Rust code outside of the pattern
+;;     itself).
+;;
+;; 3.  Linking value bindings to their types. Each scope-node that
+;;     is a definition of a value has a `"%type"` edge that leads to
+;;     its type. This is done elsewhere, not in this section; search for
+;;     `pop_symbol = "%type"`.
+;;
+;; 4.  Linking expressions in the syntax tree to types. If we can figure
+;;     out the type of an expression, it has a `.type` scoped variable that
+;;     leads to its type.
+
+
+;; ## Type-expressions
+;;
+;; Part 1 of the type inference scheme.
+;;
+;; Every type-expression should have a `.use` that leads to the type
+;; definition. For user-defined types, this works because (type_identifier) and
+;; (scoped_type_identifier) nodes all have a `.use` that crawls the scopes and
+;; finds the corresponding definition.
+;;
+;; Other types are handled here case by case.
+
+;; Function pointer types. Functions have no fields or methods, but they have
+;; an `"%rtype"` edge that is used to infer the type of a (call_expression).
+(function_type return_type: (_)? @rtype) @ty {
+  node @ty.use
+  if some @rtype {
+    node rtype
+    attr (rtype) pop_symbol = "%rtype"
+    edge @ty.use -> rtype
+    edge rtype -> @rtype.use
+  }
+}
+
+;; Treat reference types (`&T` and `&mut T`) as identical to the referred-to
+;; type (`T`), for now. This is fine only because we don't do anything much
+;; with types yet, except look up fields and methods in `expr.foo` syntax. For
+;; that specific purpose, references are quite transparent.
+(reference_type type: (_) @inner) @ty {
+  let @ty.use = @inner.use
+}
+
+;; Types we don't support yet get a dummy node for `.use`, to avoid "undefined
+;; scoped variable". It's not hooked up to anything, so any attempt to use it
+;; will silently fail to find a path through the graph.
+[
+  (abstract_type)
+  (metavariable)
+  (pointer_type)
+  (generic_type)
+  (tuple_type)
+  (unit_type)
+  (array_type)
+  (macro_invocation)
+  (empty_type)
+  (dynamic_type)
+  (bounded_type)
+  (primitive_type)
+] @ty {
+  node @ty.use
+}
+
+
+;; ## Expected types for patterns
+;;
+;; Part 2 of the type inference scheme.
+
+(let_declaration
+  pattern: (_) @pattern
+  type: (_)? @type
+  value: (_)? @expr
+) {
+  if some @type {
+    let @pattern.expected_type = @type.use
+  } else {
+    if some @expr {
+      let @pattern.expected_type = @expr.type
+    } else {
+      node @pattern.expected_type
+    }
+  }
+}
+
+(parameter pattern: (_) @pattern type: (_) @type) {
+  let @pattern.expected_type = @type.use
+}
+
+[
+  (if_let_expression pattern: (_) @pattern value: (_) @expr)
+  (while_let_expression pattern: (_) @pattern value: (_) @expr)
+] {
+  let @pattern.expected_type = @expr.type
+}
+
+(match_expression
+  value: (_) @expr
+  body: (match_block (match_arm pattern: (match_pattern . (_) @pattern)))
+) {
+  let @pattern.expected_type = @expr.type
+}
+
+;; Patterns that don't affect the types of subpatterns
+[
+  (captured_pattern (identifier) @pattern "@" (_))
+  (captured_pattern (identifier) "@" (_) @pattern)
+  (mut_pattern (mutable_specifier) (_) @pattern)
+  (or_pattern (_) @pattern)
+] @outer_pattern {
+  let @pattern.expected_type = @outer_pattern.expected_type
+}
+
+;; Pattern contexts in which we don't support type inference
+[
+  (for_expression pattern: (_) @pattern)
+  (closure_parameters (_) @pattern)
+  (tuple_pattern (_) @pattern)
+  (tuple_struct_pattern type: (_) (_) @pattern)
+  (slice_pattern (_) @pattern)
+  (field_pattern name: (shorthand_field_identifier) @pattern)
+  (field_pattern pattern: (_) @pattern)
+  (ref_pattern (_) @pattern)
+  (reference_pattern "&" (mutable_specifier)? (_) @pattern)
+] {
+  ;; Dummy node, to avoid "undefined scoped variable".
+  node @pattern.expected_type
+}
+
+
+
+;; ## Expression types
+;;
+;; Part 4 of the type inference scheme.
+;;
+;; The `.type` of (identifier) and (self) nodes, when used as expressions, is
+;; set in section "Identifiers in expression context".
+;;
+;; The `.type` of (field_expression) nodes is set in the "Fields" section.
+;;
+;; All other expressions must also have a `.type`, set here. We only infer the
+;; types of a subset of expressions; the catchall rule at the end gives other
+;; expressions an empty node as their `.type`.
+
+(type_cast_expression type: (_) @type) @expr {
+  let @expr.type = @type.use
+}
+
+(call_expression function: (_) @function) @expr {
+  node @expr.type
+  attr (@expr.type) push_symbol = "%rtype"
+  edge @expr.type -> @function.type
+}
+
+(parenthesized_expression (_) @inner) @expr {
+  let @expr.type = @inner.type
+}
+
+(struct_expression name: (_) @type) @expr {
+  let @expr.type = @type.use
+}
+
+;; Bogus: set the type of `&x` to the type of `x`.
+;; See the comment at `(reference_type type: (_) @inner)`.
+(reference_expression value: (_) @value) @expr {
+  let @expr.type = @value.type
+}
+
+(block [
+  ;; List of all expression node types that don't end in blocks.
+  ;; We omit node types for which we don't yet infer types.
+  (type_cast_expression) @last_expr
+  (call_expression) @last_expr
+  (parenthesized_expression) @last_expr
+  (struct_expression) @last_expr
+  (reference_expression) @last_expr
+  ;; When our tree-sitter grammar parses blocks where the final expression is a
+  ;; block or ends with a block, it parses this as an expression-statement. I'm
+  ;; pretty sure that is wrong. But not certain, because Rust's rules about
+  ;; semicolons and blocks are a mess.
+  ;;(expression_statement (block) @last_expr .)
+  ;;(expression_statement (unsafe_block) @last_expr .)
+  (_)
+] .) @expr {
+  if some @last_expr {
+    let @expr.type = @last_expr.type
+  } else {
+    node @expr.type
+  }
+}
+
+(block (_)* @stuff) @expr {
+  if (is-empty @stuff) {
+    node @expr.type
+  }
+}
+
+(unsafe_block (block) @block) @expr {
+  let @expr.type = @block.type
+}
+
+[
+  (if_expression consequence: (_) @then alternative: (else_clause "else" (_) @else)?)
+  (if_let_expression consequence: (_) @then alternative: (else_clause "else" (_) @else)?)
+] @expr {
+  if some @else {
+    node @expr.type
+    edge @expr.type -> @then.type
+    edge @expr.type -> @else.type
+  } else {
+    ;; The type is `()`.
+    node @expr.type
+  }
+}
+
+;; Expressions for which we don't yet infer types.
+[
+  (unary_expression)
+  (try_expression)
+  (binary_expression)
+  (assignment_expression)
+  (compound_assignment_expr)
+  (return_expression)
+  (yield_expression)
+  (string_literal)
+  (raw_string_literal)
+  (char_literal)
+  (boolean_literal)
+  (integer_literal)
+  (float_literal)
+  (scoped_identifier)
+  (generic_function)
+  (await_expression)
+  (array_expression)
+  (tuple_expression)
+  (macro_invocation)
+  (unit_expression)
+  (break_expression)
+  (continue_expression)
+  (index_expression)
+  (metavariable)
+  (closure_expression)
+  (async_block)
+  (match_expression)
+  (while_expression)
+  (while_let_expression)
+  (loop_expression)
+  (for_expression)
+  (const_block)
+  (range_expression)
+] @expr {
+  node @expr.type
 }
