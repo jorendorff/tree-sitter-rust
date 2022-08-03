@@ -1017,7 +1017,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
     node @item.to_uses
     attr (@item.to_uses) push_symbol = (source-text @name)
 
-    ;; Bridge from def to uses
+    ;; Bridge from def to uses. XXX ??? Does this need to be outside the if?
+    ;; How to test that?
     node u
     attr (u) pop_symbol = "%uses"
     edge @item.def -> u
@@ -1469,6 +1470,9 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   edge @mod.def -> @body.value_defs
   edge @mod.def -> @body.type_defs
   edge @mod.def -> @body.def_any
+
+  ;; Dual.
+  edge @body.type_uses -> @mod.to_uses
 
   ;; Define `self` as a node effectively identical to `@mod.def`. (Can't use
   ;; the same node because TSG doesn't support aliases.)
@@ -2178,6 +2182,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   if some @crate_root {
     edge type_relay -> @crate_root.to_def
     edge @crate_root.use -> type_use_relay
+
+    ;; ??? XXX TODO Dual. Test is `use crate as x; impl x::Y { fn m... }`
   } else {
     node t1
     attr (t1) type = "push_symbol", node_symbol = @name
@@ -2187,6 +2193,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
     edge t1 -> t2
     edge t2 -> @name.scope
 
+    ;; Dual.
     node u1
     attr (u1) type = "pop_symbol", node_symbol = @name
     node u2
