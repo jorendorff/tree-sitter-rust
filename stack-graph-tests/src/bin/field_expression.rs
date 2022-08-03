@@ -4,6 +4,7 @@ pub struct Student {
 
 pub struct ReportCard {
     student: Student,
+    #[allow(dead_code)]
     grades: Vec<f64>,
 }
 

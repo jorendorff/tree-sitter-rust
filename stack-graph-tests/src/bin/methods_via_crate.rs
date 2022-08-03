@@ -1,6 +1,7 @@
 /* --- path: src/bin/methods_via_crate.rs --- */
 // The full path matters because this test uses `crate::`.
 
+#[derive(Copy, Clone)]
 pub struct A;
 
 impl A {
@@ -8,6 +9,7 @@ impl A {
 }
 
 mod c {
+    #[derive(Copy, Clone)]
     pub struct D;
 
     impl D {
@@ -25,16 +27,16 @@ impl crate::c::D {
 
 fn f(gg: crate::A) {
     gg.b();
-    // ^ defined: 7
+    // ^ defined: 8
     gg.b2();
-    // ^ defined: 19
+    // ^ defined: 21
 }
 
 fn h(ii: crate::c::D) {
     ii.e();
-    // ^ defined: 14
+    // ^ defined: 16
     ii.e2();
-    // ^ defined: 23
+    // ^ defined: 25
 }
 
-fn main() { e(B); }
+fn main() { f(A); h(c::D); }
