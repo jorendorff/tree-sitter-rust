@@ -1483,6 +1483,12 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   edge self -> @body.type_defs
   edge self -> @body.def_any
 
+  ;; Dual.
+  node self_uses
+  attr (self_uses) push_symbol = "self"
+  edge self_uses -> @body.type_uses
+  edge @body.type_uses -> self_uses
+
   ;; Bind `super` in a declared module as an alias for `self` in the enclosing
   ;; module.
   node super
@@ -1495,6 +1501,18 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   edge super -> super_1
   edge super_1 -> super_2
   edge super_2 -> @mod.scope
+
+  ;; Dual.
+  node super_uses
+  attr (super_uses) push_symbol = "super"
+  node super_u1
+  attr (super_u1) pop_symbol = "self"
+  node super_u2
+  attr (super_u2) pop_symbol = "%type_uses"
+  edge super_uses -> @body.type_uses
+  edge super_u1 -> super_uses
+  edge super_u2 -> super_u1
+  edge @mod.scope_uses -> super_u2
 }
 
 ;; Trait members are not in scope for unqualified access, but they can be
@@ -1641,13 +1659,14 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   edge @keyword.to_def -> t
   edge t -> @keyword.scope
 
+  ;; Duals.
   node @keyword.use
   attr (@keyword.use) pop_symbol = (source-text @keyword)
 
   let u = (node)
-  attr (u) push_symbol = "%type_uses"
-  edge t -> @keyword.use
-  edge @keyword.scope_uses -> t
+  attr (u) pop_symbol = "%type_uses"
+  edge u -> @keyword.use
+  edge @keyword.scope_uses -> u
 }
 
 ;; `(crate)` resolves to the root.
