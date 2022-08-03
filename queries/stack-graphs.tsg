@@ -1244,97 +1244,156 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   attr (out_to_crate_defs) push_symbol = "%crate_defs"
   edge out_to_crate_defs -> ROOT_NODE
 
-  ;; There is no dual of crate_defs. XXX Why? ???
-  ;; There is no dual of out_to_crate_defs. XXX Why? ???
+  ;; Dual of crate_defs.
+  node out_to_crate_uses
+  attr (out_to_crate_uses) push_symbol = "%crate_uses"
+  edge out_to_crate_uses -> ROOT_NODE
 
-  ;; As we process the path, we're building two graph-paths: out_to_super and
-  ;; in_from_root. XXX TODO figure out duals
+  ;; Dual of out_to_crate_defs.
+  node crate_uses
+  attr (crate_uses) pop_symbol = "%crate_uses"
+  edge ROOT_NODE -> crate_uses
+
+  ;; As we process the path, we're building two graph-paths: to_super_def and
+  ;; self_def. XXX TODO figure out duals
   ;;
-  ;; out_to_super: Graph path that pushes the enclosing module's canonical path and
+  ;; to_super_def: Graph path that pushes the enclosing module's canonical path and
   ;; then jumps to the root node, for implementing `super` in this module.
-  var out_to_super = out_to_crate_defs
+  var to_super_def = out_to_crate_defs
 
-  ;; in_from_root: End node of a graph path from ROOT_NODE to the scope node for
+  ;; self_def: End node of a graph path from ROOT_NODE to the scope node for
   ;; this module, popping names as we go, so that when another file wants to
   ;; resolve `crate::a::b::c::X`, that can resolve to something in the file
   ;; `src/a/b/c.rs`.
-  var in_from_root = crate_defs
+  var self_def = crate_defs
 
-  ;; To implement `mod child;` so that `child` refers to a module defined in
-  ;; another file, we need a gadget to reach the nodes representing this
-  ;; module, in all other files. We call this gadget `to_anyfile`. It works by
-  ;; pushing the canonical path, then exiting to ROOT_NODE. Other files then
-  ;; define paths from ROOT_NODE that pop that exact stack of symbols.
+  ;; Dual of `to_super_def`.
+  var super_uses = crate_uses
+
+  ;; to_self_uses: Dual of `self_def`. Start node of a graph path that leads
+  ;; to ROOT_NODE and from there to all uses of this module, so that when another file
+  ;; contains `impl crate::a::b::c::X {...}`, we can reach those methods from
+  ;; the definition in the file `src/a/b/c.rs`.
+  var to_self_uses = out_to_crate_uses
+
+  ;; Suppose `parent.rs` contains `mod child;`. The identifier `child` refers
+  ;; to a module defined in another file, `parent/child.rs`. We need a path
+  ;; that crosses the file boundary. Therefore the module definition **for
+  ;; `parent`** contains an outbound edge `%anyfile` that leads to all
+  ;; definitions of `parent` in all files (including, crucially, the one in
+  ;; `parent/child.rs` that leads to the definition of `parent::child`) via the
+  ;; ROOT_NODE. `to_anyfile` builds this path, for the root module in the
+  ;; current source file.
+  ;;
+  ;; NOTE - Possible bug: other modules declared in this file may also need to
+  ;; have this "%anyfile" out-path, if Rust allows the syntax `mod child { mod
+  ;; grandchild; }`.
+  ;;
+  ;; This is some of the most confusing code in this whole project.
   var to_anyfile = #null
 
   ;; Doing this properly will involve understanding Cargo package layout in
   ;; detail :-P
   scan FILE_PATH {
     "(main|lib|mod|src/bin/[^/]+)\.rs$" {
-      ;; Do not push this filename onto either in_from_root or out_to_super.
+      ;; Do not push this filename onto either self_def or to_super_def.
       ;; TODO - test if super works in files named mod.rs
       set to_anyfile = out_to_crate_defs
     }
 
     "([^/]+)\.rs$" {
-      ;; Extend `in_from_root` to pop this module name; but don't change `out_to_super`.
-      node pop_types
-      attr (pop_types) pop_symbol = "%types"
-      edge in_from_root -> pop_types
-      attr (in_from_root -> pop_types) precedence = 1
-      node pop_name
-      attr (pop_name) pop_symbol = $1
-      edge pop_types -> pop_name
-      set in_from_root = pop_name
+      ;; Extend `self_def` to pop this module name; but don't change `to_super_def`.
+      node t
+      attr (t) pop_symbol = "%types"
+      edge self_def -> t
+      attr (self_def -> t) precedence = 1
+      node m
+      attr (m) pop_symbol = $1
+      edge t -> m
+      set self_def = m
+
+      ;; Dual. Extend `to_self_uses` to push this module name.
+      node tu
+      attr (tu) push_symbol = "%type_uses"
+      edge tu -> to_self_uses
+      attr (tu -> to_self_uses) precedence = 1
+      node mu
+      attr (mu) push_symbol = $1
+      edge mu -> tu
+      set to_self_uses = mu
 
       ;; To reach this module but in another file, we have to push this
       ;; module's canonical path (in reverse order, as usual), then go to
       ;; ROOT_NODE. We push the canonical path by pushing this module's name
       ;; and `%types`, then pushing the parent module's canonical path in
-      ;; reverse order (using `out_to_super`).
+      ;; reverse order (using `to_super_def`).
       node anyfile1
       attr (anyfile1) push_symbol = $1
       node anyfile2
       attr (anyfile2) push_symbol = "%types"
       edge anyfile1 -> anyfile2
-      edge anyfile2 -> out_to_super
+      edge anyfile2 -> to_super_def
       set to_anyfile = anyfile1
+
+      ;; Dual.
+      node anyu1
+      attr (anyu1) pop_symbol = $1
+      node anyu2
+      attr (anyu2) pop_symbol = "%type_uses"
+      edge anyu2 -> anyu1
+      edge super_uses -> anyu2
+      ;; set ??? = anyu1
     }
 
     "src/" {
       ;; Reset.
-      set out_to_super = out_to_crate_defs
+      set to_super_def = out_to_crate_defs
+      set super_uses = crate_uses
       set to_anyfile = out_to_crate_defs
-      set in_from_root = crate_defs
+      set self_def = crate_defs
+      set to_self_uses = out_to_crate_uses
     }
 
     "([^/]+)/" {
-      ;; Extend `in_from_root` to pop this module name.
-      node pop_types
-      attr (pop_types) pop_symbol = "%types"
-      edge in_from_root -> pop_types
-      attr (in_from_root -> pop_types) precedence = 1
-      node pop_name
-      attr (pop_name) pop_symbol = $1
-      edge pop_types -> pop_name
-      set in_from_root = pop_name
+      ;; Extend `self_def` to pop this module name.
+      node t
+      attr (t) pop_symbol = "%types"
+      edge self_def -> t
+      attr (self_def -> t) precedence = 1
+      node m
+      attr (m) pop_symbol = $1
+      edge t -> m
+      set self_def = m
 
-      ;; Extend `out_to_super` to push this module name.
+      ;; Dual. Extend `to_self_uses` to push this module name.
+      node tu
+      attr (tu) push_symbol = "%type_uses"
+      edge tu -> to_self_uses
+      node mu
+      attr (mu) push_symbol = $1
+      edge mu -> tu
+      set to_self_uses = mu
+
+      ;; Extend `to_super_def` to push this module name.
       node push_types
       attr (push_types) push_symbol = "%types"
-      edge push_types -> out_to_super
+      edge push_types -> to_super_def
       node push_name
       attr (push_name) push_symbol = $1
       edge push_name -> push_types
-      set out_to_super = push_name
+      set to_super_def = push_name
     }
   }
 
-  ;; Use in_from_root as the definition node for this source file.
-  let @root.def = in_from_root
-  edge in_from_root -> @root.type_defs
-  edge in_from_root -> @root.value_defs
-  edge in_from_root -> @root.def_any
+  ;; Use `self_def` as the definition node for this source file.
+  let @root.def = self_def
+  edge self_def -> @root.type_defs
+  edge self_def -> @root.value_defs
+  edge self_def -> @root.def_any
+
+  ;; Duals. Use `to_self_uses` as the `to_uses` node for this source file.
+  let @root.to_uses = to_self_uses
+  edge @root.type_uses -> to_self_uses
 
   ;; Bind `self` to a node with the same out-edges as @root.def. (Can't use the
   ;; same node because TSG doesn't really support aliases: only nodes with type
@@ -1346,11 +1405,29 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   edge self -> @root.value_defs
   edge self -> @root.def_any
 
-  ;; Bind `super` to the out_to_super path.
+  ;; Dual. ??? this is unexamined and seems wrong
+  node self_to_uses
+  attr (self_to_uses) push_symbol = "self"
+  edge self_to_uses -> @root.type_uses
+  edge @root.type_uses -> self_to_uses
+
+  ;; Bridge from def to uses
+  node u
+  attr (u) pop_symbol = "%uses"
+  edge self -> u
+  edge u -> self_to_uses
+
+  ;; Bind `super` to the `to_super_def` path.
   node pop_super
   attr (pop_super) pop_symbol = "super"
   edge @root.type_defs -> pop_super
-  edge pop_super -> out_to_super
+  edge pop_super -> to_super_def
+
+  ;; Dual.
+  node push_super
+  attr (push_super) push_symbol = "super"
+  edge push_super -> @root.type_uses
+  edge super_uses -> push_super
 
   ;; Bind `%anyfile` to a graph path that pushes this module's canonical name,
   ;; then goes to the shared ROOT_NODE. See comment on to_anyfile.
@@ -1359,6 +1436,8 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   edge @root.def -> pop_anyfile
   edge self -> pop_anyfile ;; keep self's out-edges the same as the module's out-edges
   edge pop_anyfile -> to_anyfile
+
+  ;; ??? XXX TODO dual
 }
 
 
