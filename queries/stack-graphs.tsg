@@ -1023,32 +1023,51 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
     edge @item.def -> u
     edge u -> @item.to_uses
   } else {
-    ;; The difficult case: find the node for this module in another file.
+    ;; The difficult case, `mod x;`. The node that is the real definition for
+    ;; this module is in another file. Make a path that goes there.
     node @item.def
     attr (@item.def) pop_symbol = (source-text @name)
     ;; We're looking for this module item's name...
-    node relay1
-    attr (relay1) push_symbol = (source-text @name)
+    node d1
+    attr (d1) push_symbol = (source-text @name)
     ;; in the type namespace...
-    node relay2
-    attr (relay2) push_symbol = "%types"
+    node d2
+    attr (d2) push_symbol = "%types"
     ;; of the node in another file...
-    node relay3
-    attr (relay3) push_symbol = "%anyfile"
+    node d3
+    attr (d3) push_symbol = "%anyfile"
     ;; that represents the current enclosing module (`self`).
-    node relay4
-    attr (relay4) push_symbol = "self"
-    node relay5
-    attr (relay5) push_symbol = "%types"
+    node d4
+    attr (d4) push_symbol = "self"
+    node d5
+    attr (d5) push_symbol = "%types"
 
-    edge @item.def -> relay1
-    edge relay1 -> relay2
-    edge relay2 -> relay3
-    edge relay3 -> relay4
-    edge relay4 -> relay5
-    edge relay5 -> @item.scope
+    edge @item.def -> d1
+    edge d1 -> d2
+    edge d2 -> d3
+    edge d3 -> d4
+    edge d4 -> d5
+    edge d5 -> @item.scope
 
-    ;; XXX TODO - Duals.
+    ;; Duals.
+    node @item.to_uses
+    attr (@item.to_uses) push_symbol = (source-text @name)
+    node u1
+    attr (u1) pop_symbol = (source-text @name)
+    node u2
+    attr (u2) pop_symbol = "%type_uses"
+    node u3
+    attr (u3) pop_symbol = "%anyfile_uses"
+    node u4
+    attr (u4) pop_symbol = "self"
+    node u5
+    attr (u5) pop_symbol = "%type_uses"
+    edge u1 -> @item.to_uses
+    edge u2 -> u1
+    edge u3 -> u2
+    edge u4 -> u3
+    edge u5 -> u4
+    edge @item.scope_uses -> u5
   }
 }
 
