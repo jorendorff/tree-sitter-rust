@@ -1603,7 +1603,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   attr (@name.use) pop_symbol = (source-text @name)
 
   let u = (node)
-  attr (u) pop_symbol = "%types"
+  attr (u) pop_symbol = "%type_uses"
   edge u -> @name.use
   edge @name.scope_uses -> u
 }
@@ -1821,7 +1821,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   let @path.use = @name.use
 
   node u
-  attr (u) pop_symbol = (replace @path.context "%pattern" "%values")
+  attr (u) pop_symbol = (replace (replace @path.context "%pattern" "%values") "^%types$" "%type_uses")
   edge u -> @name.use
 
   if some @parent {
