@@ -2251,7 +2251,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; Bug: With use-lists it is possible for the same identifier to be both the
 ;; start and the end of a path, and it's hard to tell when that's happening
 ;; using only tree-sitter queries. We only implement a single level of
-;; use-list; `use {{foo}};` does not work.
+;; use-list; `use foo::{{bar}};` is legal Rust but does not work.
 [
   (scoped_use_list (use_list (identifier) @ident))
   (scoped_use_list (use_list (use_as_clause path: (identifier) @ident)))
