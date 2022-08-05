@@ -1142,15 +1142,16 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 
 ;; Bind unit-like structs in the value namespace. We use the same node for the
 ;; struct type and its constructor.
-(struct_item body: (_)? @body) @item {
-  if none @body {
-    edge @item.item_value_defs -> @item.def
+(struct_item name: (_) @name !body) @item {
+  edge @item.item_value_defs -> @item.def
 
-    node t
-    attr (t) pop_symbol = "%type"
-    edge @item.def -> t
-    edge t -> @item.def
-  }
+  node t
+  attr (t) pop_symbol = "%type"
+  node t2
+  attr (t2) push_symbol = (source-text @name)
+  edge @item.def -> t
+  edge t -> t2
+  edge t2 -> @item.def
 }
 
 ;; *   `.impl_or_trait_defs` - On `(impl_item)` and `(trait_item)` nodes.
