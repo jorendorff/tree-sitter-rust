@@ -1529,19 +1529,20 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   edge @trait.def -> @decls.type_defs
 }
 
-;; Install a path from a struct definition to its fields.
+;; Create a namespace for struct fields.
 ;;
 ;; *   `.fields` - On `(field_declaration_list)` nodes. A node that pops
 ;;     "%fields" and leads to the field definitions.
-
-(struct_item body: (field_declaration_list) @fields) @struct {
-  edge @struct.def -> @fields.fields
-}
-
-;; Note this is used by struct-like enum variants too.
+;;
+;; Note this rule triggers for struct-like enum variants too.
 (field_declaration_list) @fields {
   node @fields.fields
   attr (@fields.fields) pop_symbol = "%fields"
+}
+
+;; Install a path from a struct definition to its fields.
+(struct_item body: (field_declaration_list) @fields) @struct {
+  edge @struct.def -> @fields.fields
 }
 
 (field_declaration_list (field_declaration name: (_) @field type: (_) @type)) @fields {
