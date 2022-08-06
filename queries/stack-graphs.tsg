@@ -1908,6 +1908,16 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   let @here.context = "%macro"
 }
 
+;; Werid attribute contexts
+[
+  (attr_item (_) @path)
+  (meta_item (_) @path)
+] {
+  node @path.scope
+  node @path.scope_uses
+  let @path.context = "%attr"
+}
+
 ;; Use-path context
 [
   (scoped_use_list path: (_) @here)
