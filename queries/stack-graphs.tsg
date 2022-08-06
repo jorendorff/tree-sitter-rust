@@ -120,8 +120,9 @@
 ;;
 ;; In the scope-uses tree, scope nodes have:
 ;;
-;; *   `.type_uses` - The dual of `.type_defs`. Has paths to all unqualified uses
-;;     of types in this scope and not in any enclosing scope.
+;; *   `.type_uses` - The dual of `.type_defs`. Has paths to all unqualified
+;;     uses of types in this scope and not in any enclosing scope. Also defined
+;;     on traits and impls.
 ;;
 ;; Children of scope nodes have:
 ;;
@@ -917,10 +918,13 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   ;; not bound in the lexical scope. However, they also should have a lexical
   ;; scope that binds `Self` (TODO).
   var defs = #null
+  var to_uses = #null
   if some @impl_or_trait {
     set defs = @impl_or_trait.impl_or_trait_defs
+    set to_uses = @impl_or_trait.impl_or_trait_to_uses
   } else {
     set defs = @body.scope
+    set to_uses = @body.scope_uses
   }
 
   node @body.type_defs
@@ -932,6 +936,11 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   attr (@body.value_defs) pop_symbol = "%values"
   edge defs -> @body.value_defs
   attr (defs -> @body.value_defs) precedence = 1
+
+  ;; Dual of "%types" above.
+  node @body.type_uses
+  attr (@body.type_uses) push_symbol = "%type_uses"
+  edge @body.type_uses -> to_uses
 
   if none @impl_or_trait {
     ;; This `%any` namespace is the union of `%types` and `%values`. The .scope
@@ -948,12 +957,6 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
     edge to_types -> @body.type_defs
     edge @body.def_any -> to_values
     edge to_values -> @body.value_defs
-
-    ;; Dual of "%types" for lexical scopes. XXX ??? Not sure what if anything
-    ;; to do for uses of items defined in `impl` and `trait` bodies.
-    node @body.type_uses
-    attr (@body.type_uses) push_symbol = "%type_uses"
-    edge @body.type_uses -> @body.scope_uses
   }
 }
 
@@ -1157,14 +1160,17 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; *   `.impl_or_trait_defs` - On `(impl_item)` and `(trait_item)` nodes.
 ;;     The node that has `%values` and `%types` edges leading to the defined
 ;;     methods and/or other items.
+;;
+;; *   `.impl_or_trait_to_uses` - Dual of `impl_or_trait_defs`.
 [
   (impl_item)
   (trait_item)
 ] @item {
   node @item.impl_or_trait_defs
+  node @item.impl_or_trait_to_uses
 }
 
-;; Support looking up all impls of a type from its definition via `"%uses"`.
+;; Support accessing items defined in impls, such as methods.
 (impl_item type: (_) @type) @item {
   node impls
   attr (impls) pop_symbol = "%impls"
