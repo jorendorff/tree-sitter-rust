@@ -337,47 +337,96 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;;     all uses of type names defined in the current scope.
 [
   (associated_type type_parameters: (type_parameters)? @params)
-  (enum_item type_parameters: (type_parameters)? @params)
+  (enum_item name: (_) @name type_parameters: (type_parameters)? @params) @self
   (function_item type_parameters: (type_parameters)? @params)
   (function_signature_item type_parameters: (type_parameters)? @params)
-  (impl_item type_parameters: (type_parameters)? @params)
-  (struct_item type_parameters: (type_parameters)? @params)
-  (trait_item type_parameters: (type_parameters)? @params)
+  (impl_item type_parameters: (type_parameters)? @params type: (_) @impl_type)
+  (struct_item name: (_) @name type_parameters: (type_parameters)? @params) @self
+  (trait_item name: (_) @name type_parameters: (type_parameters)? @params) @self
   (type_item type_parameters: (type_parameters)? @params)
-  (union_item type_parameters: (type_parameters)? @params)
+  (union_item name: (_) @name type_parameters: (type_parameters)? @params) @self
   (function_type (for_lifetimes)? @params)
 ] @parent {
-  if some @params {
+  if none @params, none @self, none @impl_type {
+    ;; An item that could have type parameters, but in fact doesn't, and also
+    ;; doesn't bind "Self", still needs `.generic_scope`, but it's just the
+    ;; same node as the enclosing scope.
+    let @parent.generic_scope = @parent.scope
+    let @parent.generic_scope_uses = @parent.scope_uses
+  } else {
     node @parent.generic_scope
     edge @parent.generic_scope -> @parent.scope
 
-    node @params.const_param_defs
-    attr (@params.const_param_defs) pop_symbol = "%values"
-    edge @parent.generic_scope -> @params.const_param_defs
-    attr (@parent.generic_scope -> @params.const_param_defs) precedence = 1
+    node const_param_defs
+    attr (const_param_defs) pop_symbol = "%values"
+    edge @parent.generic_scope -> const_param_defs
+    attr (@parent.generic_scope -> const_param_defs) precedence = 1
 
-    node @params.type_param_defs
-    attr (@params.type_param_defs) pop_symbol = "%types"
-    edge @parent.generic_scope -> @params.type_param_defs
-    attr (@parent.generic_scope -> @params.type_param_defs) precedence = 1
+    node type_param_defs
+    attr (type_param_defs) pop_symbol = "%types"
+    edge @parent.generic_scope -> type_param_defs
+    attr (@parent.generic_scope -> type_param_defs) precedence = 1
 
     ;; Duals.
     node @parent.generic_scope_uses
     edge @parent.scope_uses -> @parent.generic_scope_uses
 
-    node @params.type_param_uses
-    attr (@params.type_param_uses) push_symbol = "%type_uses"
-    edge @params.type_param_uses -> @parent.generic_scope_uses
-    ;; XXX TODO - explain why no precedence here
-  } else {
-    ;; An item that could have type parameters, but in fact doesn't, also needs
-    ;; a `.generic_scope`, but it's just the same node as the enclosing scope.
-    let @parent.generic_scope = @parent.scope
-    let @parent.generic_scope_uses = @parent.scope_uses
+    node type_param_uses
+    attr (type_param_uses) push_symbol = "%type_uses"
+    edge type_param_uses -> @parent.generic_scope_uses
+    ;; Precedence in the opposite direction would be meaningless, as
+    ;; that node has only one out-edge.
+
+    if some @params {
+      let @params.const_param_defs = const_param_defs
+      let @params.type_param_defs = type_param_defs
+      let @params.type_param_uses = type_param_uses
+    }
+
+    if none @self, none @impl_type {
+    } else {
+      ;; Define the `Self` type alias.
+      node self_def
+      attr (self_def) pop_symbol = "Self"
+      edge type_param_defs -> self_def
+
+      ;; Dual.
+      node to_self_uses
+      attr (to_self_uses) push_symbol = "Self"
+      edge to_self_uses -> type_param_uses
+
+      if some @self {
+        ;; @self is a type definition. We have the def right here, and a path
+        ;; to the uses. Bind "Self" as an alias to @self.def.
+        node dr
+        attr (dr) push_symbol = (source-text @name)
+        edge self_def -> dr
+        edge dr -> @self.def
+
+        ;; Dual.
+        node ur
+        attr (ur) pop_symbol = (source-text @name)
+        edge ur -> to_self_uses
+        edge @self.to_uses -> ur
+      } else {
+        ;; This is an `impl` block. We have, instead, a use right here, and a
+        ;; path to the def.
+        edge self_def -> @impl_type.to_def
+
+        ;; Dual.
+        edge @impl_type.use -> to_self_uses
+      }
+
+      ;; Bridge from def to uses
+      node u
+      attr (u) pop_symbol = "%uses"
+      edge self_def -> u
+      edge u -> to_self_uses
+    }
   }
 }
 
-; Generic parameters are definitions.
+;; Generic parameters are definitions.
 [
   (type_parameters (lifetime) @lifetime)
   (type_parameters (constrained_type_parameter left: (lifetime) @lifetime))
@@ -440,7 +489,10 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (function_item parameters: (_) @child) @parent
   (function_item return_type: (_) @child) @parent
   (function_item (where_clause) @child) @parent
-  (function_signature_item (_) @child) @parent
+  (function_signature_item type_parameters: (_) @child) @parent
+  (function_signature_item parameters: (_) @child) @parent
+  (function_signature_item return_type: (_) @child) @parent
+  (function_signature_item (where_clause) @child) @parent
   (impl_item type_parameters: (_) @child) @parent
   (impl_item trait: (_) @child) @parent
   (impl_item type: (_) @child) @parent
@@ -870,6 +922,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (const_item type: (type_identifier) @ident)
   (field_declaration type: (type_identifier) @ident)
   (function_item return_type: (type_identifier) @ident)
+  (function_signature_item return_type: (type_identifier) @ident)
   (impl_item trait: (type_identifier) @ident)
   (impl_item type: (type_identifier) @ident)
   (ordered_field_declaration_list type: (type_identifier) @ident)
@@ -973,6 +1026,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (const_item name: (_) @name)
   (enum_item name: (_) @name)
   (function_item name: (_) @name)
+  (function_signature_item name: (_) @name)
   (static_item name: (_) @name)
   (struct_item name: (_) @name)
   (trait_item name: (_) @name)
@@ -1091,20 +1145,31 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
 ;; # Bindings for items in the value namespace
 
 ;; Bind fn items in the value namespace.
-(function_item) @item {
+[
+  (function_item)
+  (function_signature_item)
+] @item {
   edge @item.item_value_defs -> @item.def
 }
 
 ;; Attach the declared return type of fn items that have a simple return type.
 ;; (If the function returns a type we can't resolve, or the return type is
 ;; implicitly unit, we don't bother.)
-(function_item
-  return_type: [
-    ;; List of nodes matching `$._type` that have `.to_def`
-    (type_identifier)
-    (scoped_type_identifier)
-  ] @rtype
-) @item {
+[
+  (function_item
+    return_type: [
+      ;; List of nodes matching `$._type` that have `.to_def`
+      (type_identifier)
+      (scoped_type_identifier)
+    ] @rtype
+  )
+  (function_signature_item
+    return_type: [
+      (type_identifier)
+      (scoped_type_identifier)
+    ] @rtype
+  )
+] @item {
   node t1
   attr (t1) pop_symbol = "%type"
   node t2
@@ -1854,6 +1919,7 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   (const_item type: (_) @here)
   (field_declaration type: (_) @here)
   (function_item return_type: (_) @here)
+  (function_signature_item return_type: (_) @here)
   (impl_item trait: (_) @here)
   (impl_item type: (_) @here)
   (ordered_field_declaration_list type: (_) @here)
@@ -2410,6 +2476,16 @@ attribute pop_symbol = symbol           => type = "pop_symbol", symbol = symbol
   node @ty.to_def
   node @ty.use
 }
+
+;; Hack: Instead of not supporting generics at all, make a use of `MyStruct<T>`
+;; count as a use of `MyStruct`. This allows method search to find methods in
+;; `impl<T> MyStruct<T> { ... }` and also allows `Self` in such an impl
+;; to resolve to the expected type definition.
+(generic_type type: (_) @gen) @gen_call {
+  edge @gen_call.to_def -> @gen.to_def
+  edge @gen.use -> @gen_call.use ;; dual
+}
+
 
 
 ;; ## Expected types for patterns
